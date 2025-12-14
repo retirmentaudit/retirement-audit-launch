@@ -3,3 +3,6 @@ firebase-service-account.json
 venv/
 __pycache__/
 *.pyc
+firebase-service-account.json
+venv/
+__pycache__/
