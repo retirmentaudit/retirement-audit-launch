@@ -1,0 +1,5 @@
+streamlit
+pandas
+matplotlib
+plotly
+numpy  # add this if you use any math stuff, safe anyway
