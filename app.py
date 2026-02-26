@@ -23,16 +23,13 @@ tab1, tab2, tab3 = st.tabs(["Spouse 1 / Primary", "Spouse 2 / Partner", "Retirem
 
 accounts = {"spouse1": {}, "spouse2": {}}
 
-# ────────────────────────────────────────────────
 # Spouse tabs - Investment Accounts
-# ────────────────────────────────────────────────
 for spouse, tab in [("spouse1", tab1), ("spouse2", tab2)]:
     with tab:
         st.markdown(f"### {spouse.replace('spouse1', 'Spouse 1 / Primary').replace('spouse2', 'Spouse 2 / Partner')}")
 
         spouse_age = st.number_input("Current Age", 18, retirement_age, 30, key=f"{spouse}_age")
 
-        # 2026 IRA limits (simplified, no catch-up displayed)
         ira_max = 7500
         st.caption(f"Max: ${ira_max:,} (2026)")
 
@@ -62,7 +59,6 @@ for spouse, tab in [("spouse1", tab1), ("spouse2", tab2)]:
             }
 
         with col_r:
-            # 2026 401(k) limits (same for Traditional and Roth, combined employee deferral)
             k401_max = 24500
             st.caption(f"Max deferral (Traditional + Roth combined): ${k401_max:,} (2026)")
 
@@ -95,7 +91,6 @@ for spouse, tab in [("spouse1", tab1), ("spouse2", tab2)]:
 with tab3:
     st.markdown("### Income Sources in Retirement")
 
-    # Social Security Estimator
     st.subheader("Social Security Estimator")
     st.markdown("Enter your average annual earnings over your career to get a rough estimate of your benefit at Full Retirement Age (typically 67).")
 
@@ -149,9 +144,10 @@ with tab3:
 # ────────────────────────────────────────────────
 st.markdown("---")
 st.subheader("Home Equity")
-home_value = st.number_input("Current Home Value ($)", 0.0, value=400000.0, format="%.0f")
-mortgage_balance = st.number_input("Remaining Mortgage ($)", 0.0, value=200000.0, format="%.0f")
+home_value = st.number_input("Current Home Value ($)", 0.0, value=0.0, format="%.0f")
+mortgage_balance = st.number_input("Remaining Mortgage ($)", 0.0, value=0.0, format="%.0f")
 home_appreciation = st.slider("Annual Home Appreciation (%)", 0.0, 10.0, 3.0, 0.1) / 100
+
 include_home = st.checkbox("Include Home Equity in Graph & Net Worth", value=True)
 
 # ────────────────────────────────────────────────
@@ -159,6 +155,7 @@ include_home = st.checkbox("Include Home Equity in Graph & Net Worth", value=Tru
 # ────────────────────────────────────────────────
 st.markdown("---")
 st.subheader("Mortgage Payoff Calculator")
+
 mort_principal = st.number_input("Current Mortgage Balance ($)", 0.0, value=float(mortgage_balance), format="%.2f")
 mort_rate_pct = st.number_input("Annual Interest Rate (%)", 0.0, 20.0, 6.5, 0.125)
 mort_rate_annual = mort_rate_pct / 100
@@ -168,7 +165,11 @@ extra_monthly = st.number_input("Extra Monthly Payment ($)", 0.0, value=0.0, for
 
 if st.button("Calculate Payoff"):
     monthly_rate = mort_rate_annual / 12
-    months_no, bal_no, interest_no = 0, mort_principal, 0.0
+
+    # No extra payments
+    months_no = 0
+    bal_no = mort_principal
+    interest_no = 0.0
     while bal_no > 0 and months_no < 600:
         interest = bal_no * monthly_rate
         principal = monthly_payment - interest
@@ -178,7 +179,10 @@ if st.button("Calculate Payoff"):
         months_no += 1
     date_no = datetime.now() + timedelta(days=months_no * 30)
 
-    months_yes, bal_yes, interest_yes = 0, mort_principal, 0.0
+    # With extra payments
+    months_yes = 0
+    bal_yes = mort_principal
+    interest_yes = 0.0
     while bal_yes > 0 and months_yes < 600:
         interest = bal_yes * monthly_rate
         principal = (monthly_payment + extra_monthly) - interest
@@ -189,55 +193,74 @@ if st.button("Calculate Payoff"):
     date_yes = datetime.now() + timedelta(days=months_yes * 30)
 
     savings = interest_no - interest_yes
+
     col1, col2, col3 = st.columns(3)
     col1.metric("Payoff Date (no extra)", date_no.strftime("%b %Y"))
     col2.metric("Payoff Date (with extra)", date_yes.strftime("%b %Y"))
     col3.metric("Interest Savings", f"${savings:,.2f}")
 
 # ────────────────────────────────────────────────
-# Projections
+# Retirement Projections
 # ────────────────────────────────────────────────
-max_years = max(retirement_age - st.session_state.get(f"{sp}_age", 30) for sp in accounts)
+total_invest = 0.0
+max_years = 0
 
-years_arr = np.arange(0, max_years + 1)
+for spouse in accounts:
+    spouse_age = st.session_state.get(f"{spouse}_age", 30)
+    years = max(retirement_age - spouse_age, 0)
+    max_years = max(max_years, years)
+
+    for acc_type, acc in accounts[spouse].items():
+        contrib = acc.get("contrib", 0.0) + acc.get("employer_match", 0.0)
+        r = acc.get("rate", 10.5) / 100
+
+        if years > 0:
+            if r == 0:
+                projected = acc.get("balance", 0.0) + contrib * years
+            else:
+                projected = (
+                    acc.get("balance", 0.0) * (1 + r) ** years +
+                    contrib * ((1 + r) ** years - 1) / r
+                )
+        else:
+            projected = acc.get("balance", 0.0)
+
+        total_invest += projected
+
+home_proj_value = home_value * (1 + home_appreciation) ** max_years
+home_proj_equity = max(home_proj_value - mortgage_balance, 0)
+total_nw = total_invest + (home_proj_equity if include_home else 0)
+
+st.markdown(f"### Projected at Age {retirement_age}")
+c1, c2, c3 = st.columns(3)
+c1.metric("Investments Total", f"${total_invest:,.0f}")
+c2.metric("Home Equity", f"${home_proj_equity:,.0f}" if include_home else "$0")
+c3.metric("Total Net Worth", f"${total_nw:,.0f}")
+
+# ────────────────────────────────────────────────
+# Growth Graph
+# ────────────────────────────────────────────────
+st.subheader("Growth Over Time")
+years_arr = np.arange(0, max_years + 6)
+
 invest_growth = np.zeros(len(years_arr))
-
-account_types = ["traditional_ira", "roth_ira", "hsa", "traditional_401k", "roth_401k", "brokerage"]
+home_growth = np.array([max(home_value * (1 + home_appreciation)**y - mortgage_balance, 0) for y in years_arr])
 
 for y_idx, y in enumerate(years_arr):
     for spouse in accounts:
         spouse_age = st.session_state.get(f"{spouse}_age", 30)
-        years_to_ret = max(retirement_age - spouse_age, 0)
-        eff_y = min(y, years_to_ret)
-
-        for acc_type in account_types:
-            if acc_type not in accounts[spouse]: continue
-            acc = accounts[spouse][acc_type]
+        eff_y = min(y, max(retirement_age - spouse_age, 0))
+        for acc_type, acc in accounts[spouse].items():
             contrib = acc.get("contrib", 0.0) + acc.get("employer_match", 0.0)
             r = acc.get("rate", 10.5) / 100
             bal = acc.get("balance", 0.0)
-
-            if eff_y == 0:
-                invest_growth[y_idx] += bal
-            elif r == 0:
+            if r == 0:
                 invest_growth[y_idx] += bal + contrib * eff_y
             else:
-                invest_growth[y_idx] += bal * (1 + r)**eff_y + contrib * ((1 + r)**eff_y - 1) / r
+                invest_growth[y_idx] += bal * (1 + r)**eff_y + contrib * ((1 + r)**eff_y - 1) / r if eff_y > 0 else bal
 
-home_growth = np.array([max(home_value * (1 + home_appreciation)**y - mortgage_balance, 0) for y in years_arr])
 total_growth = invest_growth + (home_growth if include_home else 0)
 
-home_proj_value = home_value * (1 + home_appreciation) ** max_years
-home_proj_equity = max(home_proj_value - mortgage_balance, 0)
-total_nw = invest_growth[-1] + (home_proj_equity if include_home else 0)
-
-st.markdown(f"### Projected at Age {retirement_age}")
-c1, c2, c3 = st.columns(3)
-c1.metric("Investments Total", f"${invest_growth[-1]:,.0f}")
-c2.metric("Home Equity", f"${home_proj_equity:,.0f}" if include_home else "$0")
-c3.metric("Total Net Worth", f"${total_nw:,.0f}")
-
-st.subheader("Growth Over Time")
 fig, ax = plt.subplots(figsize=(12, 6))
 ax.plot(years_arr, invest_growth, label="Investments", linewidth=3)
 if include_home:
@@ -249,10 +272,8 @@ ax.legend()
 ax.grid(True, alpha=0.3)
 st.pyplot(fig)
 
-st.info(f"Note: At retirement you would also have ≈ ${ss_annual_sp1 + ss_annual_sp2:,.0f}/yr from Social Security + ${pension_annual_sp1 + pension_annual_sp2:,.0f}/yr from pensions (today's dollars – actual amounts depend on COLA and claiming age).")
-
 # ────────────────────────────────────────────────
-# Enhanced Withdrawal Simulation
+# Retirement Withdrawal Simulation
 # ────────────────────────────────────────────────
 st.markdown("---")
 st.subheader("Retirement Withdrawal Simulation (Assumes 10% constant annual growth)")
@@ -305,9 +326,9 @@ else:
     elif depleted_year > 25:
         st.info(f"Your portfolio is projected to last **about {depleted_year} years** — covers most 30-year retirements but with limited margin for error.")
     elif depleted_year > 20:
-        st.warning(f"Your portfolio is projected to last only **{depleted_year} years** — may run out before a full 30-year retirement. Consider lowering your withdrawal rate.")
+        st.warning(f"Your portfolio is projected to last only {depleted_year} years — may run out before a full 30-year retirement. Consider lowering your withdrawal rate.")
     else:
-        st.error(f"Your portfolio is projected to deplete in just **{depleted_year} years** — high risk of running out early. A lower rate (closer to 4%) is strongly recommended.")
+        st.error(f"Your portfolio is projected to deplete in just {depleted_year} years — high risk of running out early. A lower rate (closer to 4%) is strongly recommended.")
 
     st.markdown("""
     **Important notes on safe withdrawal rates:**
@@ -316,7 +337,7 @@ else:
     - This simulation uses constant 10% growth (optimistic long-term average) and no inflation/volatility — real results vary due to sequence risk.
     """)
 
-# Fun section
+# Fun part
 st.markdown("---")
 name = st.text_input("What's your name?")
 if name:
