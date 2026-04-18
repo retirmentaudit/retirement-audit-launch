@@ -19,6 +19,7 @@ DEFAULT_SESSION_VALUES = {
     "user_email": None,
     "user_id": None,
     "is_paid_user": False,
+    "subscription_status": "free",
     "_scenario_to_apply": None,
     "_scenario_loaded_message": None,
 }
@@ -104,7 +105,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --------------------------------------------------
-# Saved scenario keys
+# Keys that should be saved / restored
 # --------------------------------------------------
 SCENARIO_KEYS = [
     "retirement_age",
@@ -198,14 +199,17 @@ def get_hsa_limit(age: int, coverage_type: str):
 def estimate_ss_pia(avg_annual_earnings):
     if avg_annual_earnings <= 0:
         return 0
+
     aime = avg_annual_earnings / 12
     bend1 = 1286
     bend2 = 7749
+
     pia_monthly = (
         min(aime, bend1) * 0.90
         + max(0, min(aime - bend1, bend2 - bend1)) * 0.32
         + max(0, aime - bend2) * 0.15
     )
+
     pia_monthly = np.floor(pia_monthly * 10) / 10
     return round(pia_monthly * 12)
 
@@ -214,6 +218,7 @@ def future_value(balance, annual_contrib, annual_rate, years):
         return balance
     if annual_rate == 0:
         return balance + annual_contrib * years
+
     return (
         balance * (1 + annual_rate) ** years
         + annual_contrib * (((1 + annual_rate) ** years - 1) / annual_rate)
@@ -226,7 +231,12 @@ def amortization_schedule(principal, annual_rate, monthly_payment, extra_monthly
     extra_monthly = float(extra_monthly)
 
     if principal <= 0:
-        return {"amortizes": True, "months": 0, "interest": 0.0, "balances": [0.0]}
+        return {
+            "amortizes": True,
+            "months": 0,
+            "interest": 0.0,
+            "balances": [0.0]
+        }
 
     monthly_rate = annual_rate / 12
     balance = principal
@@ -275,236 +285,6 @@ def projected_mortgage_balance(schedule_balances, years_from_now):
     if month_index >= len(schedule_balances):
         return 0.0
     return schedule_balances[month_index]
-
-def collect_app_state():
-    scenario_data = {}
-    for key in SCENARIO_KEYS:
-        if key in st.session_state:
-            scenario_data[key] = st.session_state[key]
-    return scenario_data
-
-def queue_scenario_for_load(saved_data: dict, scenario_name: str = None):
-    st.session_state["_scenario_to_apply"] = saved_data.copy()
-    st.session_state["_scenario_loaded_message"] = f"Scenario loaded: {scenario_name}" if scenario_name else "Scenario loaded."
-    st.rerun()
-
-def apply_queued_scenario_if_needed():
-    saved_data = st.session_state.get("_scenario_to_apply")
-    if not saved_data:
-        return
-    for key, value in saved_data.items():
-        st.session_state[key] = value
-    st.session_state["_scenario_to_apply"] = None
-
-def sign_up_user(email, password):
-    try:
-        response = supabase.auth.sign_up({"email": email, "password": password})
-        return response, None
-    except Exception as e:
-        return None, str(e)
-
-def sign_in_user(email, password):
-    try:
-        response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-        return response, None
-    except Exception as e:
-        return None, str(e)
-
-def sign_out_user():
-    try:
-        supabase.auth.sign_out()
-    except Exception:
-        pass
-    st.session_state.user_logged_in = False
-    st.session_state.user_email = None
-    st.session_state.user_id = None
-    st.session_state.is_paid_user = False
-
-def get_current_user():
-    try:
-        user_response = supabase.auth.get_user()
-        if user_response and user_response.user:
-            return user_response.user
-        return None
-    except Exception:
-        return None
-
-def ensure_user_profile(user_id, email):
-    try:
-        existing = (
-            supabase.table("user_profiles")
-            .select("*")
-            .eq("user_id", user_id)
-            .execute()
-        )
-        if existing.data:
-            return existing.data[0], None
-
-        inserted = (
-            supabase.table("user_profiles")
-            .insert({
-                "user_id": user_id,
-                "email": email,
-                "is_paid_user": False
-            })
-            .execute()
-        )
-        if inserted.data:
-            return inserted.data[0], None
-        return None, "Could not create profile."
-    except Exception as e:
-        return None, str(e)
-
-def get_user_profile(user_id):
-    try:
-        result = (
-            supabase.table("user_profiles")
-            .select("*")
-            .eq("user_id", user_id)
-            .execute()
-        )
-        if result.data:
-            return result.data[0], None
-        return None, None
-    except Exception as e:
-        return None, str(e)
-
-def refresh_paid_status():
-    if not st.session_state.user_id:
-        st.session_state.is_paid_user = False
-        return
-    profile, error = get_user_profile(st.session_state.user_id)
-    if error:
-        st.session_state.is_paid_user = False
-    else:
-        st.session_state.is_paid_user = bool(profile["is_paid_user"]) if profile else False
-
-def get_user_scenarios(user_id):
-    try:
-        result = (
-            supabase.table("user_scenarios")
-            .select("*")
-            .eq("user_id", user_id)
-            .order("updated_at", desc=True)
-            .execute()
-        )
-        return result.data, None
-    except Exception as e:
-        return None, str(e)
-
-def save_scenario_to_supabase(user_id, scenario_name, scenario_data):
-    try:
-        existing = (
-            supabase.table("user_scenarios")
-            .select("id")
-            .eq("user_id", user_id)
-            .eq("scenario_name", scenario_name)
-            .execute()
-        )
-
-        if existing.data and len(existing.data) > 0:
-            scenario_id = existing.data[0]["id"]
-            result = (
-                supabase.table("user_scenarios")
-                .update({
-                    "scenario_data": scenario_data,
-                    "updated_at": "now()"
-                })
-                .eq("id", scenario_id)
-                .execute()
-            )
-        else:
-            result = (
-                supabase.table("user_scenarios")
-                .insert({
-                    "user_id": user_id,
-                    "scenario_name": scenario_name,
-                    "scenario_data": scenario_data
-                })
-                .execute()
-            )
-        return result, None
-    except Exception as e:
-        return None, str(e)
-
-def user_can_ask_ai():
-    if st.session_state.is_paid_user:
-        return True, None
-
-    if not st.session_state.user_logged_in:
-        if st.session_state.ai_question_count < st.session_state.ai_limit:
-            return True, None
-        return False, "Create an account to continue."
-
-    if st.session_state.ai_question_count < st.session_state.ai_limit:
-        return True, None
-
-    return False, "Upgrade for unlimited AI."
-
-def create_checkout_session(user_id, email):
-    success_url = f"{APP_URL}/?checkout=success&session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{APP_URL}/?checkout=cancel"
-
-    session = stripe.checkout.Session.create(
-        mode="subscription",
-        line_items=[{
-            "price": STRIPE_PRICE_ID,
-            "quantity": 1
-        }],
-        success_url=success_url,
-        cancel_url=cancel_url,
-        customer_email=email,
-        client_reference_id=user_id,
-        metadata={
-            "user_id": user_id,
-            "email": email
-        }
-    )
-    return session
-
-def mark_user_paid_from_checkout_session(session_id):
-    try:
-        checkout_session = stripe.checkout.Session.retrieve(session_id)
-
-        paid_ok = (
-            checkout_session.get("payment_status") == "paid"
-            or checkout_session.get("status") == "complete"
-            or checkout_session.get("subscription") is not None
-        )
-
-        if not paid_ok:
-            return False, "Payment not confirmed yet."
-
-        user_id = checkout_session.get("client_reference_id")
-        customer_id = checkout_session.get("customer")
-        subscription_id = checkout_session.get("subscription")
-        customer_email = checkout_session.get("customer_details", {}).get("email") or checkout_session.get("customer_email")
-
-        if not user_id:
-            user_id = checkout_session.get("metadata", {}).get("user_id")
-
-        if not user_id:
-            return False, "Could not match checkout to a user."
-
-        result = (
-            supabase.table("user_profiles")
-            .upsert({
-                "user_id": user_id,
-                "email": customer_email,
-                "is_paid_user": True,
-                "stripe_customer_id": customer_id,
-                "stripe_subscription_id": subscription_id
-            })
-            .execute()
-        )
-
-        if result.data is not None:
-            if st.session_state.user_id == user_id:
-                st.session_state.is_paid_user = True
-            return True, "Subscription activated."
-        return False, "Could not update user profile."
-    except Exception as e:
-        return False, str(e)
 
 def format_ai_response(text: str):
     text = text.strip()
@@ -565,13 +345,223 @@ def get_real_ai_response(
 
     return format_ai_response(response.output_text)
 
+def collect_app_state():
+    scenario_data = {}
+    for key in SCENARIO_KEYS:
+        if key in st.session_state:
+            scenario_data[key] = st.session_state[key]
+    return scenario_data
+
+def queue_scenario_for_load(saved_data: dict, scenario_name: str = None):
+    st.session_state["_scenario_to_apply"] = saved_data.copy()
+    st.session_state["_scenario_loaded_message"] = f"Scenario loaded: {scenario_name}" if scenario_name else "Scenario loaded."
+    st.rerun()
+
+def apply_queued_scenario_if_needed():
+    saved_data = st.session_state.get("_scenario_to_apply")
+    if not saved_data:
+        return
+    for key, value in saved_data.items():
+        st.session_state[key] = value
+    st.session_state["_scenario_to_apply"] = None
+
+# --------------------------------------------------
+# Auth / profile / billing helpers
+# --------------------------------------------------
+def sign_up_user(email, password):
+    try:
+        response = supabase.auth.sign_up({"email": email, "password": password})
+        return response, None
+    except Exception as e:
+        return None, str(e)
+
+def sign_in_user(email, password):
+    try:
+        response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        return response, None
+    except Exception as e:
+        return None, str(e)
+
+def sign_out_user():
+    try:
+        supabase.auth.sign_out()
+    except Exception:
+        pass
+
+    st.session_state.user_logged_in = False
+    st.session_state.user_email = None
+    st.session_state.user_id = None
+    st.session_state.is_paid_user = False
+    st.session_state.subscription_status = "free"
+
+def get_current_user():
+    try:
+        user_response = supabase.auth.get_user()
+        if user_response and user_response.user:
+            return user_response.user
+        return None
+    except Exception:
+        return None
+
+def ensure_user_profile(user_id, email):
+    try:
+        existing = (
+            supabase.table("user_profiles")
+            .select("*")
+            .eq("user_id", user_id)
+            .execute()
+        )
+
+        if existing.data:
+            return existing.data[0], None
+
+        inserted = (
+            supabase.table("user_profiles")
+            .insert({
+                "user_id": user_id,
+                "email": email,
+                "is_paid_user": False,
+                "subscription_status": "free",
+            })
+            .execute()
+        )
+
+        if inserted.data:
+            return inserted.data[0], None
+
+        return None, "Could not create profile."
+    except Exception as e:
+        return None, str(e)
+
+def get_user_profile(user_id):
+    try:
+        result = (
+            supabase.table("user_profiles")
+            .select("*")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if result.data:
+            return result.data[0], None
+        return None, None
+    except Exception as e:
+        return None, str(e)
+
+def refresh_paid_status():
+    if not st.session_state.user_id:
+        st.session_state.is_paid_user = False
+        st.session_state.subscription_status = "free"
+        return
+
+    profile, error = get_user_profile(st.session_state.user_id)
+
+    if error or not profile:
+        st.session_state.is_paid_user = False
+        st.session_state.subscription_status = "free"
+        return
+
+    st.session_state.is_paid_user = bool(profile.get("is_paid_user", False))
+    st.session_state.subscription_status = profile.get("subscription_status", "free")
+
+def create_checkout_session(user_id, email):
+    success_url = f"{APP_URL}/?checkout=success"
+    cancel_url = f"{APP_URL}/?checkout=cancel"
+
+    session = stripe.checkout.Session.create(
+        mode="subscription",
+        line_items=[{
+            "price": STRIPE_PRICE_ID,
+            "quantity": 1,
+        }],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        customer_email=email,
+        client_reference_id=user_id,
+        metadata={
+            "user_id": user_id,
+            "email": email,
+        },
+        subscription_data={
+            "metadata": {
+                "user_id": user_id,
+                "email": email,
+            }
+        }
+    )
+
+    return session
+
+def user_can_ask_ai():
+    if st.session_state.is_paid_user:
+        return True, None
+
+    if st.session_state.ai_question_count < st.session_state.ai_limit:
+        return True, None
+
+    if not st.session_state.user_logged_in:
+        return False, "Create an account to continue."
+
+    return False, "Upgrade to Pro for unlimited AI."
+
+def user_can_save_scenarios():
+    return bool(st.session_state.is_paid_user)
+
+def get_user_scenarios(user_id):
+    try:
+        result = (
+            supabase.table("user_scenarios")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("updated_at", desc=True)
+            .execute()
+        )
+        return result.data, None
+    except Exception as e:
+        return None, str(e)
+
+def save_scenario_to_supabase(user_id, scenario_name, scenario_data):
+    try:
+        existing = (
+            supabase.table("user_scenarios")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("scenario_name", scenario_name)
+            .execute()
+        )
+
+        if existing.data and len(existing.data) > 0:
+            scenario_id = existing.data[0]["id"]
+            result = (
+                supabase.table("user_scenarios")
+                .update({
+                    "scenario_data": scenario_data,
+                    "updated_at": "now()"
+                })
+                .eq("id", scenario_id)
+                .execute()
+            )
+        else:
+            result = (
+                supabase.table("user_scenarios")
+                .insert({
+                    "user_id": user_id,
+                    "scenario_name": scenario_name,
+                    "scenario_data": scenario_data
+                })
+                .execute()
+            )
+
+        return result, None
+    except Exception as e:
+        return None, str(e)
+
 # --------------------------------------------------
 # Apply queued scenario before widgets
 # --------------------------------------------------
 apply_queued_scenario_if_needed()
 
 # --------------------------------------------------
-# Restore auth session if it exists
+# Restore auth session
 # --------------------------------------------------
 current_user = get_current_user()
 if current_user:
@@ -582,17 +572,16 @@ if current_user:
     refresh_paid_status()
 
 # --------------------------------------------------
-# Handle Stripe return
+# Handle Stripe return page
 # --------------------------------------------------
 query_params = st.query_params
+
 if query_params.get("checkout") == "success":
-    session_id = query_params.get("session_id")
-    if session_id:
-        ok, msg = mark_user_paid_from_checkout_session(session_id)
-        if ok:
-            st.success("Payment confirmed. Your Pro access is now active.")
-        else:
-            st.warning(f"Payment return detected, but activation is not complete yet: {msg}")
+    refresh_paid_status()
+    if st.session_state.is_paid_user:
+        st.success("Payment confirmed. Your Pro access is active.")
+    else:
+        st.info("Payment received. Activating your Pro access now. Refresh in a few seconds if needed.")
 
 if query_params.get("checkout") == "cancel":
     st.info("Checkout was canceled.")
@@ -614,14 +603,18 @@ st.markdown("---")
 st.subheader("Account")
 
 if st.session_state.user_logged_in and st.session_state.user_email:
-    paid_label = "Pro User" if st.session_state.is_paid_user else "Free Account"
-    st.success(f"Logged in as {st.session_state.user_email} • {paid_label}")
+    if st.session_state.is_paid_user:
+        st.success(f"Logged in as {st.session_state.user_email} • Pro User")
+    else:
+        st.info(f"Logged in as {st.session_state.user_email} • Free Account")
 
-    col_account1, col_account2 = st.columns([1, 1])
+    col_account1, col_account2 = st.columns(2)
+
     with col_account1:
         if st.button("Log Out", use_container_width=True):
             sign_out_user()
             st.rerun()
+
     with col_account2:
         if not st.session_state.is_paid_user:
             try:
@@ -1124,12 +1117,24 @@ else:
     st.pyplot(fig_wd)
 
 # --------------------------------------------------
-# Save / Load scenarios
+# Save / Load scenarios (Pro only)
 # --------------------------------------------------
 st.markdown("---")
 st.subheader("Save or Load Your Scenario")
 
-if st.session_state.user_logged_in and st.session_state.user_id:
+if not st.session_state.user_logged_in:
+    st.info("Save and load scenarios is a Pro feature. Create an account and upgrade to unlock it.")
+elif not user_can_save_scenarios():
+    st.warning("Save and load scenarios is available on Pro.")
+    try:
+        session = create_checkout_session(
+            st.session_state.user_id,
+            st.session_state.user_email
+        )
+        st.link_button("Upgrade to Pro for Save/Load", session.url, use_container_width=True)
+    except Exception:
+        st.button("Upgrade to Pro for Save/Load", disabled=True, use_container_width=True)
+else:
     scenario_name = st.text_input("Scenario Name", value="My Scenario", key="scenario_name")
 
     col_save_1, col_save_2 = st.columns(2)
@@ -1142,6 +1147,7 @@ if st.session_state.user_logged_in and st.session_state.user_id:
                 scenario_name=scenario_name,
                 scenario_data=scenario_data
             )
+
             if error:
                 st.error(f"Save failed: {error}")
             else:
@@ -1175,8 +1181,6 @@ if st.session_state.user_logged_in and st.session_state.user_id:
             )
     else:
         st.info("No saved scenarios yet.")
-else:
-    st.info("Create an account or log in to save and load scenarios.")
 
 # --------------------------------------------------
 # AI section with paywall
@@ -1185,15 +1189,25 @@ st.markdown("---")
 st.subheader("Ask AI About Your Retirement Plan")
 st.caption("For educational purposes only. This is not financial, tax, or legal advice.")
 
+st.markdown("""
+### Pro includes
+- Unlimited AI retirement insights
+- Save and load scenarios
+- A faster planning workflow for comparing ideas
+""")
+
 if st.session_state.is_paid_user:
     st.success("Pro access active: unlimited AI questions.")
 else:
+    questions_left = max(st.session_state.ai_limit - st.session_state.ai_question_count, 0)
+
     if not st.session_state.user_logged_in:
-        questions_left = max(st.session_state.ai_limit - st.session_state.ai_question_count, 0)
         st.info(f"You have {questions_left} free AI question(s) remaining as a guest.")
     else:
-        questions_left = max(st.session_state.ai_limit - st.session_state.ai_question_count, 0)
-        st.info(f"You have {questions_left} free AI question(s) remaining on your free account.")
+        if questions_left > 0:
+            st.info(f"You have {questions_left} free AI question(s) remaining.")
+        else:
+            st.warning("You’ve used your free AI questions. Upgrade to Pro for unlimited AI.")
 
 ai_question = st.text_area(
     "Type your retirement question here",
@@ -1202,8 +1216,10 @@ ai_question = st.text_area(
 )
 
 col_ai1, col_ai2 = st.columns(2)
+
 with col_ai1:
-    ask_ai_clicked = st.button("Ask AI", use_container_width=True)
+    ask_ai_clicked = st.button("Get AI Retirement Insight", use_container_width=True)
+
 with col_ai2:
     if st.session_state.user_logged_in and not st.session_state.is_paid_user:
         try:
@@ -1217,13 +1233,11 @@ if ask_ai_clicked:
 
     if not can_ask:
         if message == "Create an account to continue.":
-            st.error("You’ve used your 3 free guest AI questions. Create an account to continue.")
-        elif message == "Upgrade for unlimited AI.":
-            st.error("You’ve reached the free account limit. Upgrade for unlimited AI.")
+            st.error("You’ve used your 3 free AI questions. Create an account and upgrade to keep going.")
         else:
-            st.error(message)
+            st.error("Unlimited AI is a Pro feature. Upgrade to continue.")
     elif not ai_question.strip():
-        st.error("Please type a question before clicking Ask AI.")
+        st.error("Please type a question before clicking Get AI Retirement Insight.")
     else:
         try:
             with st.spinner("Thinking..."):
