@@ -464,7 +464,7 @@ def refresh_paid_status():
     st.session_state.subscription_status = profile.get("subscription_status", "free")
 
 def create_checkout_session(user_id, email):
-    success_url = f"{APP_URL}/?checkout=success"
+    _url = f"{APP_URL}/?checkout=success"
     cancel_url = f"{APP_URL}/?checkout=cancel"
 
     session = stripe.checkout.Session.create(
