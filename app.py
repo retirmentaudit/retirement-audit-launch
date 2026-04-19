@@ -614,17 +614,21 @@ if st.session_state.user_logged_in and st.session_state.user_email:
             st.rerun()
 
     with col_account2:
-with col_account2:
-
-    if not st.session_state.is_paid_user:
-        try:
-            session = create_checkout_session(
-                st.session_state.user_id,
-                st.session_state.user_email
-            )
-            st.link_button("Upgrade to Pro", session.url, use_container_width=True)
-        except Exception as e:
-            st.error(f"Checkout error: {e}")
+        if not st.session_state.is_paid_user:
+            try:
+                session = create_checkout_session(
+                    st.session_state.user_id,
+                    st.session_state.user_email
+                )
+                st.link_button(
+                    "Upgrade to Pro",
+                    session.url,
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"Checkout error: {e}")
+        else:
+            st.success("You already have Pro.")
 
 else:
     account_tab1, account_tab2 = st.tabs(["Log In", "Sign Up"])
@@ -672,154 +676,7 @@ else:
                         st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
                     except Exception:
                         st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
-
-retirement_age = st.slider(
-    "Preferred Retirement Age",
-    50, 80, 65, 1,
-    key="retirement_age"
-)
-
-tab1, tab2, tab3 = st.tabs(["Spouse 1 / Primary", "Spouse 2 / Partner", "Retirement Income"])
-
-accounts = {"spouse1": {}, "spouse2": {}}
-
-# --------------------------------------------------
-# Spouse tabs
-# --------------------------------------------------
-for spouse, tab in [("spouse1", tab1), ("spouse2", tab2)]:
-    with tab:
-        display_name = "Spouse 1 / Primary" if spouse == "spouse1" else "Spouse 2 / Partner"
-        st.markdown(f"### {display_name}")
-
-        spouse_age = st.number_input(
-            "Current Age",
-            min_value=18,
-            max_value=retirement_age,
-            value=30,
-            key=f"{spouse}_age"
-        )
-
-        ira_base, ira_catch, ira_total_limit = get_ira_limits(spouse_age)
-        k401_base, k401_catch, k401_total_limit = get_401k_limits(spouse_age)
-
-        st.caption(
-            f"2026 IRA limit: ${ira_base:,}"
-            + (f" + ${ira_catch:,} catch-up" if ira_catch > 0 else "")
-            + f" = ${ira_total_limit:,} total"
-        )
-        st.caption(
-            f"2026 401(k) employee deferral limit: ${k401_base:,}"
-            + (f" + ${k401_catch:,} catch-up" if k401_catch > 0 else "")
-            + f" = ${k401_total_limit:,} total"
-        )
-
-        col_l, col_r = st.columns(2)
-        selected_any = False
-
-        with col_l:
-            use_traditional_ira = st.checkbox("Include Traditional IRA", value=False, key=f"{spouse}_use_traditional_ira")
-            if use_traditional_ira:
-                selected_any = True
-                st.markdown("**Traditional IRA**")
-                accounts[spouse]["traditional_ira"] = {
-                    "balance": st.number_input("Current Balance ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_trad_ira_bal"),
-                    "contrib": st.number_input("Annual Contribution ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_trad_ira_cont"),
-                    "rate": st.slider("Expected Growth Rate (%)", min_value=0.0, max_value=20.0, value=7.0, step=0.1, key=f"{spouse}_trad_ira_rate")
-                }
-
-            use_roth_ira = st.checkbox("Include Roth IRA", value=False, key=f"{spouse}_use_roth_ira")
-            if use_roth_ira:
-                selected_any = True
-                st.markdown("**Roth IRA**")
-                accounts[spouse]["roth_ira"] = {
-                    "balance": st.number_input("Current Roth Balance ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_roth_bal"),
-                    "contrib": st.number_input("Annual Roth Contribution ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_roth_cont"),
-                    "rate": st.slider("Expected Growth Rate (%)", min_value=0.0, max_value=20.0, value=7.0, step=0.1, key=f"{spouse}_roth_rate")
-                }
-
-            use_hsa = st.checkbox("Include HSA", value=False, key=f"{spouse}_use_hsa")
-            if use_hsa:
-                selected_any = True
-                st.markdown("**HSA**")
-                hsa_coverage = st.selectbox("HSA Coverage Type", options=["Self-only", "Family"], key=f"{spouse}_hsa_coverage")
-                hsa_base, hsa_catch, hsa_total_limit = get_hsa_limit(spouse_age, hsa_coverage)
-                st.caption(
-                    f"2026 HSA limit: ${hsa_base:,}"
-                    + (f" + ${hsa_catch:,} catch-up" if hsa_catch > 0 else "")
-                    + f" = ${hsa_total_limit:,} total"
-                )
-                accounts[spouse]["hsa"] = {
-                    "balance": st.number_input("Current HSA Balance ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_hsa_bal"),
-                    "contrib": st.number_input("Annual HSA Contribution ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_hsa_cont"),
-                    "rate": st.slider("Expected Growth Rate (%)", min_value=0.0, max_value=20.0, value=6.5, step=0.1, key=f"{spouse}_hsa_rate"),
-                    "coverage": hsa_coverage,
-                    "limit": hsa_total_limit
-                }
-
-        with col_r:
-            use_traditional_401k = st.checkbox("Include Traditional 401(k)", value=False, key=f"{spouse}_use_traditional_401k")
-            if use_traditional_401k:
-                selected_any = True
-                st.markdown("**Traditional 401(k)**")
-                st.caption("Employer match is always Traditional and does not count toward your elective deferral limit.")
-                accounts[spouse]["traditional_401k"] = {
-                    "balance": st.number_input("Current Balance ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_trad_401k_bal"),
-                    "contrib": st.number_input("Your Annual Contribution ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_trad_401k_cont"),
-                    "employer_match": st.number_input("Employer Match ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_trad_401k_match"),
-                    "rate": st.slider("Expected Growth Rate (%)", min_value=0.0, max_value=20.0, value=7.0, step=0.1, key=f"{spouse}_trad_401k_rate")
-                }
-
-            use_roth_401k = st.checkbox("Include Roth 401(k)", value=False, key=f"{spouse}_use_roth_401k")
-            if use_roth_401k:
-                selected_any = True
-                st.markdown("**Roth 401(k)**")
-                accounts[spouse]["roth_401k"] = {
-                    "balance": st.number_input("Current Balance ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_roth_401k_bal"),
-                    "contrib": st.number_input("Your Annual Contribution ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_roth_401k_cont"),
-                    "rate": st.slider("Expected Growth Rate (%)", min_value=0.0, max_value=20.0, value=7.0, step=0.1, key=f"{spouse}_roth_401k_rate")
-                }
-
-            use_brokerage = st.checkbox("Include Brokerage / Taxable", value=False, key=f"{spouse}_use_brokerage")
-            if use_brokerage:
-                selected_any = True
-                st.markdown("**Brokerage / Taxable**")
-                accounts[spouse]["brokerage"] = {
-                    "balance": st.number_input("Current Balance ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_brok_bal"),
-                    "contrib": st.number_input("Annual Contribution ($)", min_value=0.0, value=0.0, format="%.0f", key=f"{spouse}_brok_cont"),
-                    "rate": st.slider("Expected Growth Rate (%)", min_value=0.0, max_value=20.0, value=6.5, step=0.1, key=f"{spouse}_brok_rate")
-                }
-
-        if not selected_any:
-            st.info("Select the accounts you want to use to begin.")
-
-        ira_total_entered = (
-            accounts[spouse].get("traditional_ira", {}).get("contrib", 0.0)
-            + accounts[spouse].get("roth_ira", {}).get("contrib", 0.0)
-        )
-        if ira_total_entered > ira_total_limit:
-            st.warning(
-                f"Combined Traditional IRA + Roth IRA contributions are ${ira_total_entered:,.0f}, "
-                f"which is above the 2026 combined IRA limit of ${ira_total_limit:,.0f} for this age."
-            )
-
-        k401_total_entered = (
-            accounts[spouse].get("traditional_401k", {}).get("contrib", 0.0)
-            + accounts[spouse].get("roth_401k", {}).get("contrib", 0.0)
-        )
-        if k401_total_entered > k401_total_limit:
-            st.warning(
-                f"Combined Traditional 401(k) + Roth 401(k) employee contributions are ${k401_total_entered:,.0f}, "
-                f"which is above the 2026 elective deferral limit of ${k401_total_limit:,.0f} for this age."
-            )
-
-        if "hsa" in accounts[spouse]:
-            hsa_limit = accounts[spouse]["hsa"].get("limit", 0.0)
-            hsa_entered = accounts[spouse]["hsa"].get("contrib", 0.0)
-            if hsa_entered > hsa_limit:
-                st.warning(
-                    f"HSA contribution is ${hsa_entered:,.0f}, which is above the 2026 HSA limit of ${hsa_limit:,.0f}."
-                )
-
+                        
 # --------------------------------------------------
 # Retirement income tab
 # --------------------------------------------------
