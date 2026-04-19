@@ -463,33 +463,31 @@ def refresh_paid_status():
     st.session_state.is_paid_user = bool(profile.get("is_paid_user", False))
     st.session_state.subscription_status = profile.get("subscription_status", "free")
 
-def create_checkout_session(user_id, email):
-    _url = f"{APP_URL}/?checkout=success"
-    cancel_url = f"{APP_URL}/?checkout=cancel"
+col_account1, col_account2 = st.columns(2)
 
-    session = stripe.checkout.Session.create(
-        mode="subscription",
-        line_items=[{
-            "price": STRIPE_PRICE_ID,
-            "quantity": 1,
-        }],
-        success_url=success_url,
-        cancel_url=cancel_url,
-        customer_email=email,
-        client_reference_id=user_id,
-        metadata={
-            "user_id": user_id,
-            "email": email,
-        },
-        subscription_data={
-            "metadata": {
-                "user_id": user_id,
-                "email": email,
-            }
-        }
-    )
+with col_account1:
+    if st.button("Log Out", use_container_width=True):
+        sign_out_user()
+        st.rerun()
 
-    return session
+with col_account2:
+    if not st.session_state.is_paid_user:
+        try:
+            session = create_checkout_session(
+                st.session_state.user_id,
+                st.session_state.user_email
+            )
+
+            st.link_button(
+                "Upgrade to Pro",
+                session.url,
+                use_container_width=True
+            )
+
+        except Exception as e:
+            st.error(f"Checkout error: {e}")
+    else:
+        st.success("You already have Pro.")
 
 def user_can_ask_ai():
     if st.session_state.is_paid_user:
@@ -616,15 +614,18 @@ if st.session_state.user_logged_in and st.session_state.user_email:
             st.rerun()
 
     with col_account2:
-        if not st.session_state.is_paid_user:
-            try:
-                session = create_checkout_session(
-                    st.session_state.user_id,
-                    st.session_state.user_email
-                )
-                st.link_button("Upgrade to Pro", session.url, use_container_width=True)
-            except Exception:
-                st.button("Upgrade to Pro", disabled=True, use_container_width=True)
+with col_account2:
+
+    if not st.session_state.is_paid_user:
+        try:
+            session = create_checkout_session(
+                st.session_state.user_id,
+                st.session_state.user_email
+            )
+            st.link_button("Upgrade to Pro", session.url, use_container_width=True)
+        except Exception as e:
+            st.error(f"Checkout error: {e}")
+
 else:
     account_tab1, account_tab2 = st.tabs(["Log In", "Sign Up"])
 
