@@ -44,6 +44,16 @@ supabase: Client = create_client(
 
 stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
 
+def create_portal_session(customer_id):
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=APP_URL
+        )
+        return session.url
+    except Exception as e:
+        return None
+    
 openai_client = None
 if OPENAI_ENABLED:
     try:
@@ -492,6 +502,21 @@ def refresh_paid_status():
 # ==========================================================
 # STRIPE HELPERS
 # ==========================================================
+def create_portal_session(customer_id: str):
+    """
+    Creates a Stripe Billing Portal session so paid users can
+    manage/cancel their subscription.
+    """
+    if not customer_id:
+        raise ValueError("Missing Stripe customer ID.")
+
+    session = stripe.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=APP_URL,
+    )
+
+    return session.url
+
 def create_checkout_session(user_id: str, email: str | None = None):
     """
     Creates a Stripe Checkout session.
@@ -881,6 +906,9 @@ if st.session_state.get("_scenario_loaded_message"):
 # ==========================================================
 # ACCOUNT SECTION
 # ==========================================================
+# ==========================================================
+# ACCOUNT SECTION
+# ==========================================================
 st.markdown("---")
 st.subheader("Account")
 
@@ -903,16 +931,18 @@ if st.session_state.user_logged_in and st.session_state.user_email:
                 checkout_url = get_checkout_url()
                 if checkout_url:
                     st.link_button(
-                        "Upgrade to Pro",
+                        "Upgrade to Pro • $1.99/month",
                         checkout_url,
                         use_container_width=True,
                     )
+                    st.caption("Cancel anytime • First month free with code")
                 else:
                     st.info("Could not generate checkout link yet.")
             except Exception as e:
                 st.error(f"Checkout error: {e}")
         else:
             st.success("You already have Pro access.")
+
 else:
     st.info("Log in or sign up to save scenarios and connect a paid subscription to your account.")
 
@@ -963,7 +993,7 @@ else:
                         st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
                     except Exception:
                         st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
-
+                        
 # ==========================================================
 # MAIN INPUTS
 # ==========================================================
