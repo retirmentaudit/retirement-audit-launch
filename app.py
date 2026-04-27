@@ -941,8 +941,17 @@ if st.session_state.user_logged_in and st.session_state.user_email:
             except Exception as e:
                 st.error(f"Checkout error: {e}")
         else:
-            st.success("You already have Pro access.")
+    st.success("You already have Pro access.")
 
+    try:
+        portal_url = create_portal_session(st.session_state.customer_id)
+        st.link_button(
+            "Manage Billing / Cancel Subscription",
+            portal_url,
+            use_container_width=True,
+        )
+    except Exception as e:
+        st.error(f"Billing portal error: {e}")
 else:
     st.info("Log in or sign up to save scenarios and connect a paid subscription to your account.")
 
