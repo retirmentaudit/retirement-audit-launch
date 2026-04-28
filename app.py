@@ -926,23 +926,7 @@ if st.session_state.user_logged_in and st.session_state.user_email:
             st.rerun()
 
     with col_account2:
-        if not st.session_state.is_paid_user:
-            try:
-                checkout_url = get_checkout_url()
-                if checkout_url:
-                    st.link_button(
-                        "Upgrade to Pro • $1.99/month",
-                        checkout_url,
-                        use_container_width=True,
-                    )
-                    st.caption("Cancel anytime • First month free with code")
-                else:
-                    st.info("Could not generate checkout link yet.")
-            except Exception as e:
-                st.error(f"Checkout error: {e}")
-        else:
-            st.success("You already have Pro access.")
-
+        if st.session_state.is_paid_user:
             try:
                 profile, profile_error = get_user_profile(st.session_state.user_id)
 
@@ -960,11 +944,27 @@ if st.session_state.user_logged_in and st.session_state.user_email:
                         )
                     else:
                         st.info("Billing portal is not available yet. Please refresh in a moment.")
-
             except Exception as e:
                 st.error(f"Billing portal error: {e}")
+        else:
+            try:
+                checkout_url = get_checkout_url()
+                if checkout_url:
+                    st.link_button(
+                        "Upgrade to Pro • $1.99/month",
+                        checkout_url,
+                        use_container_width=True,
+                    )
+                    st.caption("Cancel anytime • First month free with code")
+                else:
+                    st.info("Could not generate checkout link yet.")
+            except Exception as e:
+                st.error(f"Checkout error: {e}")
 
-            login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
+else:
+    st.info("Log in or sign up to save scenarios and connect a paid subscription to your account.")
+
+    login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
 
     with login_tab:
         login_email = st.text_input("Login Email", key="login_email")
@@ -1011,7 +1011,6 @@ if st.session_state.user_logged_in and st.session_state.user_email:
                         st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
                     except Exception:
                         st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
-                        
 # ==========================================================
 # MAIN INPUTS
 # ==========================================================
