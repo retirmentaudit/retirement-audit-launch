@@ -944,18 +944,27 @@ if st.session_state.user_logged_in and st.session_state.user_email:
             st.success("You already have Pro access.")
 
             try:
-                portal_url = create_portal_session(st.session_state.customer_id)
-                st.link_button(
-                    "Manage Billing / Cancel Subscription",
-                    portal_url,
-                    use_container_width=True,
-                )
+                profile, profile_error = get_user_profile(st.session_state.user_id)
+
+                if profile_error:
+                    st.error("Could not load billing profile.")
+                else:
+                    stripe_customer_id = profile.get("stripe_customer_id") if profile else None
+
+                    if stripe_customer_id:
+                        portal_url = create_portal_session(stripe_customer_id)
+                        st.link_button(
+                            "Manage Billing / Cancel Subscription",
+                            portal_url,
+                            use_container_width=True,
+                        )
+                    else:
+                        st.info("Billing portal is not available yet. Please refresh in a moment.")
+
             except Exception as e:
                 st.error(f"Billing portal error: {e}")
-else:
-    st.info("Log in or sign up to save scenarios and connect a paid subscription to your account.")
 
-    login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
+            login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
 
     with login_tab:
         login_email = st.text_input("Login Email", key="login_email")
