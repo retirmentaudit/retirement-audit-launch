@@ -92,6 +92,63 @@ st.markdown(
         color: #c9d1d9 !important;
         font-size: 0.95rem !important;
     }
+
+    .hero-card {
+        padding: 34px 30px;
+        border-radius: 22px;
+        background: linear-gradient(135deg, #111827 0%, #1f2937 55%, #0f172a 100%);
+        border: 1px solid #334155;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+        margin-bottom: 22px;
+    }
+
+    .hero-eyebrow {
+        color: #93c5fd !important;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-size: 0.85rem;
+        margin-bottom: 8px;
+    }
+
+    .hero-title {
+        font-size: 3.0rem;
+        line-height: 1.05;
+        font-weight: 800;
+        margin-bottom: 12px;
+        color: white !important;
+    }
+
+    .hero-subtitle {
+        font-size: 1.18rem;
+        color: #d1d5db !important;
+        max-width: 820px;
+        margin-bottom: 18px;
+    }
+
+    .benefit-card, .pro-card, .score-card {
+        padding: 18px;
+        border-radius: 16px;
+        background: #151b23;
+        border: 1px solid #2d3748;
+        height: 100%;
+    }
+
+    .callout-card {
+        padding: 18px;
+        border-radius: 16px;
+        background: #102033;
+        border: 1px solid #315f8c;
+        margin: 14px 0;
+    }
+
+    .section-kicker {
+        color: #93c5fd !important;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.8rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -894,128 +951,51 @@ if query_params.get("checkout") == "cancel":
     st.info("Checkout was canceled.")
 
 # ==========================================================
-# HEADER
+# HERO / LANDING SECTION
 # ==========================================================
-st.title("Retirement Audit App 🚀")
-st.subheader("Retirement planning, projections, scenarios, and AI guidance")
+st.markdown(
+    """
+    <div class="hero-card">
+        <div class="hero-eyebrow">Free retirement audit • Estimated time: 4 minutes</div>
+        <div class="hero-title">Know if your retirement plan will actually work.</div>
+        <div class="hero-subtitle">
+            Test retirement ages, savings accounts, Social Security, withdrawal rates, home equity,
+            and then ask an AI retirement planner questions based on your own numbers.
+        </div>
+        <div class="small-muted">
+            No account required to start. Create an account only if you want to save plans or unlock Pro.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+col_hero1, col_hero2, col_hero3, col_hero4 = st.columns(4)
+with col_hero1:
+    st.markdown('<div class="benefit-card">✅ <b>See if your money lasts</b><br><span class="small-muted">Project your retirement balance over time.</span></div>', unsafe_allow_html=True)
+with col_hero2:
+    st.markdown('<div class="benefit-card">📈 <b>Compare assumptions</b><br><span class="small-muted">Change growth, withdrawals, and retirement age.</span></div>', unsafe_allow_html=True)
+with col_hero3:
+    st.markdown('<div class="benefit-card">💬 <b>Ask AI questions</b><br><span class="small-muted">Get answers based on the numbers you enter.</span></div>', unsafe_allow_html=True)
+with col_hero4:
+    st.markdown('<div class="benefit-card">💾 <b>Save scenarios</b><br><span class="small-muted">Upgrade only if you want saved plans.</span></div>', unsafe_allow_html=True)
+
+st.markdown("---")
+st.markdown('<div class="section-kicker">Step 1</div>', unsafe_allow_html=True)
+st.header("Start your free retirement audit")
+st.caption("Enter estimates only. You do not need account numbers, Social Security numbers, or exact statements to test a scenario.")
 
 if st.session_state.get("_scenario_loaded_message"):
     st.success(st.session_state["_scenario_loaded_message"])
     st.session_state["_scenario_loaded_message"] = None
 
 # ==========================================================
-# ACCOUNT SECTION
-# ==========================================================
-# ==========================================================
-# ACCOUNT SECTION
-# ==========================================================
-st.markdown("---")
-st.subheader("Account")
-
-if st.session_state.user_logged_in and st.session_state.user_email:
-    if st.session_state.is_paid_user:
-        st.success(f"Logged in as {st.session_state.user_email} • Pro User")
-    else:
-        st.info(f"Logged in as {st.session_state.user_email} • Free Account")
-
-    col_account1, col_account2 = st.columns(2)
-
-    with col_account1:
-        if st.button("Log Out", use_container_width=True):
-            sign_out_user()
-            st.rerun()
-
-    with col_account2:
-        if st.session_state.is_paid_user:
-            try:
-                profile, profile_error = get_user_profile(st.session_state.user_id)
-
-                if profile_error:
-                    st.error("Could not load billing profile.")
-                else:
-                    stripe_customer_id = profile.get("stripe_customer_id") if profile else None
-
-                    if stripe_customer_id:
-                        portal_url = create_portal_session(stripe_customer_id)
-                        st.link_button(
-                            "Manage Billing / Cancel Subscription",
-                            portal_url,
-                            use_container_width=True,
-                        )
-                    else:
-                        st.info("Billing portal is not available yet. Please refresh in a moment.")
-            except Exception as e:
-                st.error(f"Billing portal error: {e}")
-        else:
-            try:
-                checkout_url = get_checkout_url()
-                if checkout_url:
-                    st.link_button(
-                        "Upgrade to Pro • $1.99/month",
-                        checkout_url,
-                        use_container_width=True,
-                    )
-                    st.caption("Cancel anytime • First month free with code")
-                else:
-                    st.info("Could not generate checkout link yet.")
-            except Exception as e:
-                st.error(f"Checkout error: {e}")
-
-else:
-    st.info("Log in or sign up to save scenarios and connect a paid subscription to your account.")
-
-    login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
-
-    with login_tab:
-        login_email = st.text_input("Login Email", key="login_email")
-        login_password = st.text_input("Login Password", type="password", key="login_password")
-
-        if st.button("Log In to Account", use_container_width=True):
-            if not login_email or not login_password:
-                st.error("Please enter both email and password.")
-            else:
-                response, error = sign_in_user(login_email, login_password)
-                if error:
-                    st.error(f"Login failed: {error}")
-                else:
-                    try:
-                        user = response.user
-                        st.session_state.user_logged_in = True
-                        st.session_state.user_email = user.email
-                        st.session_state.user_id = user.id
-                        ensure_user_profile(user.id, user.email)
-                        refresh_paid_status()
-                        st.session_state._checkout_url = None
-                        st.session_state._checkout_user_id = None
-                        st.success("Logged in successfully.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Login worked, but the session could not be loaded: {e}")
-
-    with signup_tab:
-        signup_email = st.text_input("Sign Up Email", key="signup_email")
-        signup_password = st.text_input("Create Password", type="password", key="signup_password")
-
-        if st.button("Create Account", use_container_width=True):
-            if not signup_email or not signup_password:
-                st.error("Please enter both email and password.")
-            else:
-                response, error = sign_up_user(signup_email, signup_password)
-                if error:
-                    st.error(f"Sign up failed: {error}")
-                else:
-                    try:
-                        user = response.user
-                        if user:
-                            ensure_user_profile(user.id, user.email)
-                        st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
-                    except Exception:
-                        st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
-# ==========================================================
 # MAIN INPUTS
 # ==========================================================
 st.markdown("---")
-st.subheader("Retirement Inputs")
+st.markdown('<div class="section-kicker">Step 2</div>', unsafe_allow_html=True)
+st.header("Tell us what you have")
+st.caption("Select only the accounts that apply. You can leave anything unknown at $0 and come back later.")
 
 retirement_age = st.slider(
     "Target Retirement Age",
@@ -1530,21 +1510,60 @@ else:
     ax_wd.grid(True, alpha=0.3)
     st.pyplot(fig_wd)
 
+
+# ==========================================================
+# RETIREMENT SCORECARD
+# ==========================================================
+st.markdown("---")
+st.markdown('<div class="section-kicker">Your result</div>', unsafe_allow_html=True)
+st.header("Retirement Audit Snapshot")
+
+if starting_balance <= 0:
+    st.warning("Add at least one retirement or investment account to generate your retirement snapshot.")
+else:
+    target_age = 95
+    years_needed = max(target_age - retirement_age, 0)
+    projected_last_age = retirement_age + (depleted_year if depleted_year is not None else wd_years_max)
+
+    if depleted_year is None or depleted_year >= years_needed:
+        score_label = "🟢 Strong"
+        score_message = "Based on your assumptions, your portfolio is projected to last through about age 95 or longer."
+    elif depleted_year >= max(years_needed - 10, 0):
+        score_label = "🟡 Needs review"
+        score_message = "Your plan is close, but your portfolio may run out before age 95 under these assumptions."
+    else:
+        score_label = "🔴 High risk"
+        score_message = "Your portfolio may run out significantly before age 95 under these assumptions."
+
+    col_score1, col_score2, col_score3 = st.columns(3)
+    with col_score1:
+        st.metric("Retirement Score", score_label)
+    with col_score2:
+        st.metric("Projected Starting Investments", f"${starting_balance:,.0f}")
+    with col_score3:
+        if depleted_year is None:
+            st.metric("Projected Money Lasts Until", f"Age {retirement_age + wd_years_max}+")
+        else:
+            st.metric("Projected Money Lasts Until", f"Age {projected_last_age}")
+
+    st.markdown(f'<div class="score-card"><b>{score_message}</b><br><span class="small-muted">This is a simplified projection using your selected withdrawal rate and growth assumptions. Use the AI planner below to pressure-test it.</span></div>', unsafe_allow_html=True)
+
 # ==========================================================
 # SAVE / LOAD SCENARIOS
 # ==========================================================
 st.markdown("---")
-st.subheader("Save or Load Your Scenario")
+st.markdown('<div class="section-kicker">Optional Pro feature</div>', unsafe_allow_html=True)
+st.header("Save or load your retirement plan")
 
 if not st.session_state.user_logged_in:
-    st.info("Save and load scenarios is a Pro feature. Create an account and upgrade to unlock it.")
+    st.info("Want to save this plan? Create an account and upgrade to Pro when you are ready.")
 elif not user_can_save_scenarios():
-    st.warning("Save and load scenarios is available on Pro.")
+    st.warning("Saving plans is a Pro feature.")
     try:
         checkout_url = get_checkout_url()
         if checkout_url:
             st.link_button(
-                "Upgrade to Pro for Save/Load",
+                "Save This Plan with Pro",
                 checkout_url,
                 use_container_width=True,
             )
@@ -1619,16 +1638,22 @@ else:
 # AI SECTION
 # ==========================================================
 st.markdown("---")
-st.subheader("Ask AI About Your Retirement Plan")
-st.caption("For educational purposes only. This is not financial, tax, or legal advice.")
+st.markdown('<div class="section-kicker">Step 3</div>', unsafe_allow_html=True)
+st.header("Meet your AI retirement planner")
+st.caption("Ask questions based on the retirement numbers you entered. For educational purposes only — not financial, tax, or legal advice.")
 
 st.markdown(
     """
-### Pro includes
-- Unlimited AI retirement insights
-- Save and load scenarios
-- A faster planning workflow for comparing ideas
-"""
+<div class="callout-card">
+<b>Try asking:</b><br>
+• Can I retire at 60?<br>
+• Am I saving enough?<br>
+• What happens if my investments only grow 5%?<br>
+• Is my withdrawal rate too risky?<br>
+• Should I delay Social Security?
+</div>
+""",
+    unsafe_allow_html=True,
 )
 
 if st.session_state.is_paid_user:
@@ -1646,6 +1671,19 @@ else:
             st.info(f"You have {questions_left} free AI question(s) remaining.")
         else:
             st.warning("You’ve used your free AI questions. Upgrade to Pro for unlimited AI.")
+
+st.markdown(
+    """
+<div class="pro-card">
+<b>Upgrade to Pro for $1.99/month</b><br>
+✅ Unlimited AI retirement planner<br>
+✅ Save unlimited retirement plans<br>
+✅ Compare different retirement dates without retyping everything<br>
+✅ Access your plans from any device
+</div>
+""",
+    unsafe_allow_html=True,
+)
 
 ai_question = st.text_area(
     "Type your retirement question here",
@@ -1722,6 +1760,118 @@ if st.session_state.ai_chat_history:
             st.markdown(f"**Question:** {chat['question']}")
             st.markdown(chat["answer"])
             st.markdown("---")
+
+
+# ==========================================================
+# ACCOUNT / PRO SECTION
+# ==========================================================
+st.markdown("---")
+st.markdown('<div class="section-kicker">Save your work</div>', unsafe_allow_html=True)
+st.header("Create an account only when you want to save or upgrade")
+st.caption("You can use the calculator first. Accounts are for saving scenarios, connecting Pro, and managing billing.")
+
+st.markdown("---")
+st.subheader("Your Account")
+
+if st.session_state.user_logged_in and st.session_state.user_email:
+    if st.session_state.is_paid_user:
+        st.success(f"Logged in as {st.session_state.user_email} • Pro User")
+    else:
+        st.info(f"Logged in as {st.session_state.user_email} • Free Account")
+
+    col_account1, col_account2 = st.columns(2)
+
+    with col_account1:
+        if st.button("Log Out", use_container_width=True):
+            sign_out_user()
+            st.rerun()
+
+    with col_account2:
+        if st.session_state.is_paid_user:
+            try:
+                profile, profile_error = get_user_profile(st.session_state.user_id)
+
+                if profile_error:
+                    st.error("Could not load billing profile.")
+                else:
+                    stripe_customer_id = profile.get("stripe_customer_id") if profile else None
+
+                    if stripe_customer_id:
+                        portal_url = create_portal_session(stripe_customer_id)
+                        st.link_button(
+                            "Manage Billing / Cancel Subscription",
+                            portal_url,
+                            use_container_width=True,
+                        )
+                    else:
+                        st.info("Billing portal is not available yet. Please refresh in a moment.")
+            except Exception as e:
+                st.error(f"Billing portal error: {e}")
+        else:
+            try:
+                checkout_url = get_checkout_url()
+                if checkout_url:
+                    st.link_button(
+                        "Upgrade to Pro • $1.99/month",
+                        checkout_url,
+                        use_container_width=True,
+                    )
+                    st.caption("Cancel anytime • First month free with code")
+                else:
+                    st.info("Could not generate checkout link yet.")
+            except Exception as e:
+                st.error(f"Checkout error: {e}")
+
+else:
+    st.info("Log in or sign up to save scenarios and connect a paid subscription to your account.")
+
+    login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
+
+    with login_tab:
+        login_email = st.text_input("Login Email", key="login_email")
+        login_password = st.text_input("Login Password", type="password", key="login_password")
+
+        if st.button("Log In to Account", use_container_width=True):
+            if not login_email or not login_password:
+                st.error("Please enter both email and password.")
+            else:
+                response, error = sign_in_user(login_email, login_password)
+                if error:
+                    st.error(f"Login failed: {error}")
+                else:
+                    try:
+                        user = response.user
+                        st.session_state.user_logged_in = True
+                        st.session_state.user_email = user.email
+                        st.session_state.user_id = user.id
+                        ensure_user_profile(user.id, user.email)
+                        refresh_paid_status()
+                        st.session_state._checkout_url = None
+                        st.session_state._checkout_user_id = None
+                        st.success("Logged in successfully.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Login worked, but the session could not be loaded: {e}")
+
+    with signup_tab:
+        signup_email = st.text_input("Sign Up Email", key="signup_email")
+        signup_password = st.text_input("Create Password", type="password", key="signup_password")
+
+        if st.button("Create Account", use_container_width=True):
+            if not signup_email or not signup_password:
+                st.error("Please enter both email and password.")
+            else:
+                response, error = sign_up_user(signup_email, signup_password)
+                if error:
+                    st.error(f"Sign up failed: {error}")
+                else:
+                    try:
+                        user = response.user
+                        if user:
+                            ensure_user_profile(user.id, user.email)
+                        st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
+                    except Exception:
+                        st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
 
 # ==========================================================
 # IMPORTANT INFO
