@@ -1,6 +1,8 @@
+cat > requirements.txt << 'EOF'
 streamlit
 numpy
 matplotlib
 openai
 supabase
 stripe
+EOF
