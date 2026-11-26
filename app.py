@@ -173,9 +173,47 @@ st.markdown(
     div.stButton > button, div.stLinkButton > a {
         border-radius: 12px !important; font-weight: 700 !important; min-height: 46px;
     }
-    [data-testid="stTextInput"] input {
+    /* The page canvas is dark, so most copy is light. Typed fields keep a light
+       face. iOS Safari paints input text with -webkit-text-fill-color, which
+       stays white if only `color` is set, so letters and the caret vanish on
+       the white box. Pin both, plus the placeholder, on every text control. */
+    [data-testid="stTextInput"] input,
+    [data-testid="stTextArea"] textarea,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stNumberInputField"],
+    [data-testid="stDateInput"] input,
+    [data-testid="stTimeInput"] input,
+    [data-testid="stChatInput"] textarea,
+    [data-testid="stChatInputTextArea"],
+    textarea,
+    input[type="text"],
+    input[type="password"],
+    input[type="email"],
+    input[type="number"],
+    input[type="search"],
+    input[type="tel"],
+    input[type="url"] {
         background-color: #f8fafc !important;
         color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        caret-color: #111827 !important;
+        color-scheme: light;
+    }
+    [data-testid="stTextInput"] input::placeholder,
+    [data-testid="stTextArea"] textarea::placeholder,
+    [data-testid="stNumberInput"] input::placeholder,
+    [data-testid="stChatInput"] textarea::placeholder,
+    [data-testid="stChatInputTextArea"]::placeholder,
+    textarea::placeholder,
+    input::placeholder {
+        color: #64748b !important;
+        -webkit-text-fill-color: #64748b !important;
+        opacity: 1 !important;
+    }
+    input:-webkit-autofill,
+    textarea:-webkit-autofill {
+        -webkit-text-fill-color: #111827 !important;
+        caret-color: #111827 !important;
     }
     /* Secondary buttons keep a light face and dark label in either theme. */
     div.stButton > button[kind="secondary"],

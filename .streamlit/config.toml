@@ -2,3 +2,7 @@
 # Hide the developer toolbar. Community Cloud still injects Fork and the
 # GitHub icon as host toolbar items, so app.py also hides that cluster with CSS.
 toolbarMode = "minimal"
+
+# No [theme] block. Widgets follow the phone's light or dark setting, while the
+# app canvas is forced dark in app.py. Typed fields set their own text,
+# placeholder, and caret colors there so they stay dark on a light box.
