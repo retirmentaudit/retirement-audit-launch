@@ -1,11 +1,38 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from openai import OpenAI
 from supabase import create_client, Client
 import stripe
 import json
+import io
+
+from action_plan import EDUCATIONAL_NOTE, generate_action_plan, plan_fingerprint
+from local_demo import (
+    DEMO_EMAIL,
+    DEMO_USER_ID,
+    FakeSupabase,
+    demo_active,
+    demo_checkout_session,
+    demo_identity,
+    demo_profile_override,
+    demo_retrieved_session,
+    demo_sample_inputs,
+    read_secret,
+    use_fake_supabase,
+)
+from pdf_report import build_audit_pdf
+from unlock import (
+    ACTIVE_SUBSCRIPTION_STATUSES,
+    FREE_AI_QUESTION_LIMIT,
+    ai_question_limit,
+    fulfillment_decision,
+    merged_question_count,
+    onetime_checkout_params,
+    profile_is_paid,
+    user_can_ask,
+)
 
 # ==========================================================
 # PAGE CONFIG
@@ -23,28 +50,56 @@ REQUIRED_SECRETS = [
     "APP_URL",
 ]
 
-missing_secrets = [key for key in REQUIRED_SECRETS if key not in st.secrets]
+# STRIPE_PRICE_ID_ONETIME is the new $5 price. It is not in REQUIRED_SECRETS so a
+# missing value cannot take the free audit offline. Checkout refuses to start
+# until the secret is set. STRIPE_PRICE_ID stays required because existing
+# deploys already have it; active subscribers are still treated as paid.
+_secrets = None
+try:
+    _secrets = st.secrets
+except Exception:
+    _secrets = None
+
+missing_secrets = [key for key in REQUIRED_SECRETS if not read_secret(_secrets, key)]
 if missing_secrets:
     st.error("Missing required secrets in secrets.toml: " + ", ".join(missing_secrets))
     st.stop()
 
-OPENAI_ENABLED = "OPENAI_API_KEY" in st.secrets
-APP_URL = st.secrets["APP_URL"].rstrip("/")
-STRIPE_PRICE_ID = st.secrets["STRIPE_PRICE_ID"]
+APP_URL = str(read_secret(_secrets, "APP_URL")).rstrip("/")
+STRIPE_PRICE_ID = read_secret(_secrets, "STRIPE_PRICE_ID")
+STRIPE_PRICE_ID_ONETIME = read_secret(_secrets, "STRIPE_PRICE_ID_ONETIME")
+STRIPE_SECRET_KEY = read_secret(_secrets, "STRIPE_SECRET_KEY")
+LOCAL_DEMO = demo_active(STRIPE_SECRET_KEY)
+OPENAI_API_KEY = read_secret(_secrets, "OPENAI_API_KEY")
+OPENAI_ENABLED = bool(OPENAI_API_KEY)
 
 # ==========================================================
 # CLIENTS
 # ==========================================================
-supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
+SUPABASE_URL = read_secret(_secrets, "SUPABASE_URL")
+if LOCAL_DEMO and use_fake_supabase(SUPABASE_URL):
+    supabase = FakeSupabase()
+else:
+    supabase: Client = create_client(SUPABASE_URL, read_secret(_secrets, "SUPABASE_KEY"))
+stripe.api_key = STRIPE_SECRET_KEY
+# Query-param login and stubbed Checkout exist only with the in-memory client.
+# A real Supabase URL never takes that path, even if the demo variable is set.
+LOCAL_SANDBOX = LOCAL_DEMO and isinstance(supabase, FakeSupabase)
 
 openai_client = None
 if OPENAI_ENABLED:
     try:
-        openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
     except Exception:
         OPENAI_ENABLED = False
         openai_client = None
+
+UNLOCK_TITLE = "Unlock your full Retirement Audit — $5 once"
+UNLOCK_BODY = (
+    "Get a personalized action plan (what to change first, how much to save, and a Social Security claiming note), "
+    "a PDF you can keep, 50 AI questions on your numbers, and saved access anytime you come back. No subscription."
+)
+UNLOCK_BUTTON = "Unlock my full audit — $5"
 
 # ==========================================================
 # STYLING
@@ -91,10 +146,11 @@ st.markdown(
     .hero-title { font-size: 3rem; line-height: 1.05; font-weight: 800; margin-bottom: 14px; }
     [data-testid="stMarkdownContainer"] .hero-sub { font-size: 1.22rem; color: #d7deea !important; max-width: 820px; }
     .pill { display: inline-block; padding: 7px 12px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); margin-right: 8px; margin-bottom: 8px; font-size: .92rem; }
-    .step-card, .summary-card, .upgrade-card {
+    .step-card, .summary-card, .upgrade-card, .unlock-card {
         padding: 22px; border-radius: 18px; background: rgba(21,27,35,.92);
         border: 1px solid rgba(255,255,255,.12); margin-bottom: 16px;
     }
+    .unlock-card { border-color: rgba(251, 191, 36, .55); }
     .metric-card {
         padding: 20px; border-radius: 18px; background: rgba(255,255,255,.06);
         border: 1px solid rgba(255,255,255,.11); height: 100%;
@@ -242,11 +298,12 @@ DEFAULTS = {
     "planning_for": "Me + spouse",
     "ai_question_count": 0,
     "ai_chat_history": [],
-    "ai_limit": 3,
+    "ai_limit": FREE_AI_QUESTION_LIMIT,
     "user_logged_in": False,
     "user_email": None,
     "user_id": None,
     "is_paid_user": False,
+    "paid_via": None,
     "subscription_status": "free",
     "_checkout_url": None,
     "_checkout_user_id": None,
@@ -474,9 +531,44 @@ def sign_out_user():
         pass
     for key in ["user_logged_in", "is_paid_user"]:
         st.session_state[key] = False
-    for key in ["user_email", "user_id", "_checkout_url", "_checkout_user_id"]:
+    for key in ["user_email", "user_id", "_checkout_url", "_checkout_user_id", "_sb_access_token", "_sb_refresh_token", "paid_via"]:
         st.session_state[key] = None
     st.session_state.subscription_status = "free"
+    st.session_state.ai_question_count = 0
+    st.session_state.ai_chat_history = []
+    st.session_state.ai_limit = FREE_AI_QUESTION_LIMIT
+    st.session_state._action_plan_cache = None
+
+def remember_auth_session(auth_response):
+    """Keep the Supabase session across reruns, including the return from Checkout.
+
+    The client is created again on every run, so without this the JWT is gone
+    when Stripe redirects back and the profile update cannot be authorized.
+    """
+    session = getattr(auth_response, "session", None)
+    if session is None and isinstance(auth_response, dict):
+        session = auth_response.get("session")
+    if not session:
+        return
+    if isinstance(session, dict):
+        access = session.get("access_token")
+        refresh = session.get("refresh_token")
+    else:
+        access = getattr(session, "access_token", None)
+        refresh = getattr(session, "refresh_token", None)
+    if access and refresh:
+        st.session_state["_sb_access_token"] = access
+        st.session_state["_sb_refresh_token"] = refresh
+
+def restore_auth_session():
+    access = st.session_state.get("_sb_access_token")
+    refresh = st.session_state.get("_sb_refresh_token")
+    if not access or not refresh:
+        return
+    try:
+        supabase.auth.set_session(access, refresh)
+    except Exception:
+        pass
 
 def get_current_user():
     try:
@@ -508,42 +600,71 @@ def get_user_profile(user_id):
     except Exception as e:
         return None, str(e)
 
+def apply_profile_to_session(profile: dict):
+    paid = profile_is_paid(profile)
+    st.session_state.is_paid_user = paid
+    st.session_state.subscription_status = profile.get("subscription_status") or "free"
+    st.session_state.paid_via = profile.get("paid_via")
+    st.session_state.ai_limit = ai_question_limit(paid)
+    if profile.get("ai_questions_used") is not None:
+        merged = merged_question_count(st.session_state.ai_question_count, profile.get("ai_questions_used"))
+        st.session_state.ai_question_count = merged
+        stored = int(profile.get("ai_questions_used") or 0)
+        if merged != stored and st.session_state.user_id:
+            persist_ai_question_count(st.session_state.user_id, merged)
+
 def refresh_paid_status():
     if not st.session_state.user_id:
         st.session_state.is_paid_user = False
+        st.session_state.paid_via = None
         st.session_state.subscription_status = "free"
+        st.session_state.ai_limit = FREE_AI_QUESTION_LIMIT
         return
     profile, error = get_user_profile(st.session_state.user_id)
     if error or not profile:
         st.session_state.is_paid_user = False
+        st.session_state.paid_via = None
         st.session_state.subscription_status = "free"
+        st.session_state.ai_limit = FREE_AI_QUESTION_LIMIT
         return
-    st.session_state.is_paid_user = bool(profile.get("is_paid_user", False))
-    st.session_state.subscription_status = profile.get("subscription_status", "free")
+    apply_profile_to_session(profile)
+
+def persist_ai_question_count(user_id: str, count: int):
+    """Save the question count on the profile. Missing column is non-fatal."""
+    try:
+        supabase.table("user_profiles").update({"ai_questions_used": int(count)}).eq("user_id", user_id).execute()
+        st.session_state["_ai_count_unsaved"] = False
+        return None
+    except Exception:
+        st.session_state["_ai_count_unsaved"] = True
+        return "unsaved"
+
+def create_checkout_session(user_id: str, email: str | None = None):
+    """Create a one-time Checkout Session. Active subscribers are not sent here."""
+    params = onetime_checkout_params(user_id, email, STRIPE_PRICE_ID_ONETIME, APP_URL)
+    if LOCAL_SANDBOX:
+        # Screenshot mode must not create a live Checkout Session.
+        return demo_checkout_session(user_id, email)
+    return stripe.checkout.Session.create(**params)
+
+def retrieve_checkout_session(session_id: str):
+    if LOCAL_SANDBOX:
+        return demo_retrieved_session(session_id, st.session_state.get("user_id"), st.session_state.get("user_email"))
+    return stripe.checkout.Session.retrieve(session_id)
 
 def create_portal_session(customer_id: str):
+    if LOCAL_SANDBOX:
+        raise RuntimeError("Billing portal is not available in local demo mode.")
     if not customer_id:
         raise ValueError("Missing Stripe customer ID.")
     session = stripe.billing_portal.Session.create(customer=customer_id, return_url=APP_URL)
     return session.url
 
-def create_checkout_session(user_id: str, email: str | None = None):
-    if not user_id:
-        raise ValueError("User must be logged in before upgrading.")
-    return stripe.checkout.Session.create(
-        mode="subscription",
-        line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
-        success_url=f"{APP_URL}?checkout=success",
-        cancel_url=f"{APP_URL}?checkout=cancel",
-        allow_promotion_codes=True,
-        client_reference_id=user_id,
-        customer_email=email if email else None,
-        metadata={"user_id": user_id, "email": email or ""},
-    )
-
 def get_checkout_url():
     if not st.session_state.user_logged_in or not st.session_state.user_id or st.session_state.is_paid_user:
         return None
+    if not STRIPE_PRICE_ID_ONETIME:
+        raise ValueError("Add STRIPE_PRICE_ID_ONETIME to the app secrets before checkout can start.")
     if st.session_state.get("_checkout_url") and st.session_state.get("_checkout_user_id") == st.session_state.user_id:
         return st.session_state._checkout_url
     session = create_checkout_session(st.session_state.user_id, st.session_state.user_email)
@@ -614,34 +735,255 @@ The user has not entered a balance or income amount. Do not present the retireme
     return format_ai_response(response.output_text)
 
 def user_can_ask_ai():
-    if st.session_state.is_paid_user:
-        return True, None
-    if st.session_state.ai_question_count < st.session_state.ai_limit:
-        return True, None
+    return user_can_ask(
+        st.session_state.ai_question_count,
+        bool(st.session_state.is_paid_user),
+        bool(st.session_state.user_logged_in),
+    )
+
+def query_value(name: str):
+    value = st.query_params.get(name)
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+def render_auth_tabs(key_prefix: str):
+    login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
+    with login_tab:
+        login_email = st.text_input("Login Email", key=f"{key_prefix}_login_email")
+        login_password = st.text_input("Login Password", type="password", key=f"{key_prefix}_login_password")
+        if st.button("Log In", use_container_width=True, key=f"{key_prefix}_login_button"):
+            if not login_email or not login_password:
+                st.error("Please enter both email and password.")
+            else:
+                response, error = sign_in_user(login_email, login_password)
+                if error:
+                    st.error(f"Login failed: {error}")
+                else:
+                    user = response.user
+                    remember_auth_session(response)
+                    st.session_state.user_logged_in = True
+                    st.session_state.user_email = user.email
+                    st.session_state.user_id = user.id
+                    ensure_user_profile(user.id, user.email)
+                    refresh_paid_status()
+                    st.rerun()
+    with signup_tab:
+        signup_email = st.text_input("Sign Up Email", key=f"{key_prefix}_signup_email")
+        signup_password = st.text_input("Create Password", type="password", key=f"{key_prefix}_signup_password")
+        if st.button("Create Account", use_container_width=True, key=f"{key_prefix}_signup_button"):
+            if not signup_email or not signup_password:
+                st.error("Please enter both email and password.")
+            else:
+                response, error = sign_up_user(signup_email, signup_password)
+                if error:
+                    st.error(f"Sign up failed: {error}")
+                else:
+                    try:
+                        user = response.user
+                        if user:
+                            remember_auth_session(response)
+                            ensure_user_profile(user.id, user.email)
+                    except Exception:
+                        pass
+                    st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
+
+def render_unlock_paywall(key_prefix: str):
+    st.markdown(
+        f"<div class='unlock-card'><h3>{UNLOCK_TITLE}</h3><p class='muted'>{UNLOCK_BODY}</p></div>",
+        unsafe_allow_html=True,
+    )
     if not st.session_state.user_logged_in:
-        return False, "Create an account to continue."
-    return False, "Upgrade to Pro for unlimited AI."
+        if st.button(UNLOCK_BUTTON, type="primary", use_container_width=True, key=f"{key_prefix}_unlock"):
+            st.session_state[f"{key_prefix}_auth_open"] = True
+        if st.session_state.get(f"{key_prefix}_auth_open"):
+            st.caption("A free account is required before checkout. No subscription.")
+            render_auth_tabs(key_prefix)
+        return
+    if LOCAL_SANDBOX:
+        st.caption("Local demo: this button does not contact Stripe.")
+    try:
+        url = get_checkout_url()
+        if url:
+            st.link_button(UNLOCK_BUTTON, url, type="primary", use_container_width=True, key=f"{key_prefix}_checkout")
+    except Exception as e:
+        st.error(f"Checkout error: {e}")
+
+def plan_inputs_from_state(results: dict) -> dict:
+    manual_ss = bool(st.session_state.get("use_manual_ss"))
+    contributions = 0.0
+    for spouse_accounts in results.get("accounts", {}).values():
+        for account in spouse_accounts.values():
+            contributions += float(account.get("contrib") or 0) + float(account.get("employer_match") or 0)
+    earnings = float(st.session_state.get("avg_earn_sp1") or 0)
+    if results.get("include_spouse2"):
+        earnings += float(st.session_state.get("avg_earn_sp2") or 0)
+    return {
+        "planning_for": results.get("planning_for"),
+        "current_age": results.get("sp1_age"),
+        "retirement_age": results.get("retirement_age"),
+        "years_to_retirement": int(results.get("max_years") or 0),
+        "total_invest": round(float(results.get("total_invest") or 0), 2),
+        "annual_contributions": round(contributions, 2),
+        "earnings": round(earnings, 2),
+        "withdrawal_rate_pct": round(float(results.get("wd_rate_pct") or 0), 2),
+        "growth_pct": round(float(results.get("post_growth_pct") or 0), 2),
+        "annual_withdrawal": round(float(results.get("annual_wd") or 0), 2),
+        "depletion_label": results.get("depletion_age_label"),
+        "score": results.get("score"),
+        "score_label": results.get("score_label"),
+        "ss_annual": round(float(results.get("ss_total") or 0), 2),
+        "pension_annual": round(float(results.get("pension_total") or 0), 2),
+        "ss_claim_age": int(st.session_state.get("ss_start_sp1") or 67) if manual_ss else 67,
+        "manual_ss": manual_ss,
+    }
+
+def figure_png(fig) -> bytes:
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format="png", bbox_inches="tight")
+    return buffer.getvalue()
+
+def render_paid_action_plan(results: dict, chart_pngs: list[bytes]):
+    inputs = plan_inputs_from_state(results)
+    fingerprint = plan_fingerprint(inputs)
+    cached = st.session_state.get("_action_plan_cache")
+    if not cached or cached.get("fingerprint") != fingerprint:
+        client = openai_client if OPENAI_ENABLED else None
+        text, source = generate_action_plan(inputs, client)
+        st.session_state["_action_plan_cache"] = {"fingerprint": fingerprint, "text": text, "source": source}
+    plan = st.session_state["_action_plan_cache"]
+    st.markdown("## Your action plan")
+    if plan["source"] == "openai":
+        st.caption(f"Written from your audit numbers with a fixed prompt. {EDUCATIONAL_NOTE} This does not guarantee returns.")
+    else:
+        st.caption(f"Built from your audit numbers with a fixed set of rules, because the AI writer is unavailable. {EDUCATIONAL_NOTE} This does not guarantee returns.")
+    st.markdown(plan["text"])
+    summary = {
+        "score": results.get("score"),
+        "score_label": results.get("score_label"),
+        "retirement_age": results.get("retirement_age"),
+        "total_invest": results.get("total_invest"),
+        "total_nw": results.get("total_nw"),
+        "annual_withdrawal": results.get("annual_wd"),
+        "withdrawal_rate_pct": results.get("wd_rate_pct"),
+        "growth_pct": results.get("post_growth_pct"),
+        "depletion_label": results.get("depletion_age_label"),
+        "ss_annual": results.get("ss_total"),
+        "pension_annual": results.get("pension_total"),
+    }
+    generated_on = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    pdf_bytes = build_audit_pdf(summary, plan["text"], chart_pngs, generated_on=generated_on)
+    st.download_button(
+        "Download my audit PDF",
+        data=pdf_bytes,
+        file_name="retirement-audit.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+        key="download_audit_pdf",
+        type="primary",
+    )
+
+def handle_checkout_return():
+    """Apply a returned Checkout Session once. Repeating the same id is a no-op."""
+    checkout = query_value("checkout")
+    if checkout == "cancel":
+        st.info("Checkout was canceled. You can unlock the full audit whenever you are ready.")
+        return
+    if checkout != "success":
+        return
+    session_id = query_value("session_id")
+    st.session_state._checkout_url = None
+    st.session_state._checkout_user_id = None
+    if not session_id:
+        # Older subscription checkouts returned without a session id. Re-read the profile.
+        refresh_paid_status()
+        if st.session_state.is_paid_user:
+            st.success("Payment confirmed. Your full audit is unlocked.")
+        else:
+            st.info("If you just finished a subscription checkout, refresh in a few seconds. New $5 payments include a checkout session id.")
+        return
+    if not st.session_state.user_logged_in or not st.session_state.user_id:
+        st.warning("Log in with the same account you used at checkout and this page will unlock the audit.")
+        render_auth_tabs("checkout_return")
+        return
+    done = st.session_state.setdefault("_fulfilled_checkout_sessions", [])
+    if session_id in done and st.session_state.is_paid_user:
+        st.success("Your full audit is already unlocked.")
+        return
+    try:
+        session = retrieve_checkout_session(session_id)
+    except Exception as e:
+        st.error(f"Could not confirm the payment with Stripe: {e}")
+        return
+    profile, error = get_user_profile(st.session_state.user_id)
+    if error:
+        st.error("Could not load your profile to record the payment.")
+        return
+    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    decision = fulfillment_decision(session, st.session_state.user_id, st.session_state.user_email, profile, now_iso)
+    if decision["update"]:
+        try:
+            saved = supabase.table("user_profiles").update(decision["update"]).eq("user_id", st.session_state.user_id).execute()
+        except Exception:
+            st.error("Payment was confirmed, but saving it on your profile failed. Run the database migration, then refresh this page.")
+            return
+        if not getattr(saved, "data", None):
+            st.error("Payment was confirmed, but your profile did not change. Run the database migration, then refresh this page.")
+            return
+        refresh_paid_status()
+    if decision["reason"] in {"unlocked", "already_unlocked"}:
+        if session_id not in done:
+            done.append(session_id)
+        if decision["reason"] == "already_unlocked":
+            refresh_paid_status()
+            st.success("Your full audit is already unlocked.")
+        else:
+            st.success("Payment confirmed. Your full audit is unlocked. This was a one-time $5 payment, not a subscription.")
+        return
+    if decision["reason"] == "unpaid":
+        st.warning("Stripe has not marked this payment as paid yet. If you just paid, wait a moment and refresh.")
+    elif decision["reason"] == "user_mismatch":
+        st.error("This payment does not match the account you are logged in with. Log in with the same account you used at checkout.")
+    elif decision["reason"] == "not_one_time":
+        refresh_paid_status()
+        if st.session_state.is_paid_user:
+            st.success("Your existing subscription is still unlocked.")
+        else:
+            st.info("This checkout was not a one-time payment, so the $5 unlock was not applied.")
+    else:
+        st.info("Checkout returned, but the audit was not unlocked.")
 
 # ==========================================================
 # APP STATE RESTORE
 # ==========================================================
 apply_queued_scenario_if_needed()
+restore_auth_session()
 current_user = get_current_user()
+if LOCAL_SANDBOX and current_user is None:
+    current_user = demo_identity(st.query_params)
 if current_user:
     st.session_state.user_logged_in = True
-    st.session_state.user_email = current_user.email
-    st.session_state.user_id = current_user.id
-    ensure_user_profile(current_user.id, current_user.email)
+    st.session_state.user_email = getattr(current_user, "email", None) or DEMO_EMAIL
+    st.session_state.user_id = getattr(current_user, "id", None) or DEMO_USER_ID
+    ensure_user_profile(st.session_state.user_id, st.session_state.user_email)
     refresh_paid_status()
+    if LOCAL_SANDBOX:
+        override = demo_profile_override(st.query_params)
+        if override:
+            try:
+                supabase.table("user_profiles").update(override).eq("user_id", st.session_state.user_id).execute()
+            except Exception:
+                pass
+            refresh_paid_status()
 
-query_params = st.query_params
-if query_params.get("checkout") == "success":
-    refresh_paid_status()
-    st.session_state._checkout_url = None
-    st.session_state._checkout_user_id = None
-    st.success("Payment confirmed. Your Pro access is active." if st.session_state.is_paid_user else "Payment completed. Refresh in a few seconds if your account has not updated yet.")
-elif query_params.get("checkout") == "cancel":
-    st.info("Checkout was canceled.")
+handle_checkout_return()
+
+if LOCAL_SANDBOX and query_value("demo_sample") == "1":
+    for key, value in demo_sample_inputs().items():
+        st.session_state[key] = value
+    st.session_state.wizard_step = int(query_value("demo_step")) if query_value("demo_step") else 7
+if LOCAL_SANDBOX and query_value("demo_ai_used") and str(query_value("demo_ai_used")).isdigit():
+    st.session_state.ai_question_count = int(query_value("demo_ai_used"))
 
 # ==========================================================
 # INPUT HELPERS
@@ -962,7 +1304,15 @@ with st.sidebar:
     st.markdown("---")
     if st.session_state.user_logged_in:
         st.success(f"Logged in: {st.session_state.user_email}")
-        st.write("Plan: **Pro**" if st.session_state.is_paid_user else "Plan: **Free**")
+        if st.session_state.is_paid_user:
+            status = str(st.session_state.subscription_status or "").lower()
+            st.write("Plan: **Unlocked**")
+            if status in ACTIVE_SUBSCRIPTION_STATUSES or st.session_state.paid_via == "subscription":
+                st.caption("Existing subscription")
+            else:
+                st.caption("$5 once")
+        else:
+            st.write("Plan: **Free**")
         if st.button("Log out", use_container_width=True):
             sign_out_user()
             st.rerun()
@@ -1212,6 +1562,7 @@ elif step == 7:
 
         st.markdown("---")
         st.markdown("## Your projection")
+        chart_pngs = []
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.plot(results["years_arr"], results["invest_growth"], label="Investments", linewidth=3)
         if np.max(results["home_growth"]) > 0:
@@ -1221,6 +1572,7 @@ elif step == 7:
         ax.set_ylabel("Value ($)")
         ax.legend()
         ax.grid(True, alpha=0.3)
+        chart_pngs.append(figure_png(fig))
         st.pyplot(fig)
 
         if results["total_invest"] > 0:
@@ -1236,41 +1588,49 @@ elif step == 7:
             ax2.set_title(f"Withdrawal at {results['wd_rate_pct']:.1f}% with {results['post_growth_pct']:.1f}% annual growth")
             ax2.legend()
             ax2.grid(True, alpha=0.3)
+            chart_pngs.append(figure_png(fig2))
             st.pyplot(fig2)
+
+        if st.session_state.is_paid_user:
+            render_paid_action_plan(results, chart_pngs)
+        else:
+            render_unlock_paywall("after_charts")
 
     st.markdown("---")
     st.markdown("## Ask AI about your retirement plan")
     st.caption("For educational purposes only. This is not financial, tax, or legal advice.")
     st.markdown("Ask questions like: **Can I retire earlier? Is my withdrawal rate too high? What should I change first?**")
+    questions_used = int(st.session_state.ai_question_count or 0)
+    question_cap = ai_question_limit(bool(st.session_state.is_paid_user))
+    questions_left = max(question_cap - questions_used, 0)
     if st.session_state.is_paid_user:
-        st.success("Pro access active: unlimited AI questions.")
+        st.success(f"Full audit unlocked. You have {questions_left} of {question_cap} AI questions left.")
     else:
-        left = max(st.session_state.ai_limit - st.session_state.ai_question_count, 0)
-        st.info(f"You have {left} free AI question(s) remaining.")
+        st.info(f"You have {questions_left} free AI question(s) remaining.")
+    if st.session_state.get("_ai_count_unsaved"):
+        st.caption("Your latest question counted, but it could not be saved on your profile yet. Run the database migration so the count stays after a refresh.")
+    if not st.session_state.is_paid_user and questions_left == 0:
+        st.caption("You've used your 3 free AI questions.")
+        render_unlock_paywall("ai_limit")
     ai_question = st.text_area("Type your retirement question", placeholder="Example: Am I on track to retire by 65?", key="ai_question_input")
-    c_ai1, c_ai2 = st.columns(2)
-    with c_ai1:
-        ask_ai_clicked = st.button("Get AI Retirement Insight", type="primary", use_container_width=True)
-    with c_ai2:
-        if st.session_state.user_logged_in and not st.session_state.is_paid_user:
-            try:
-                url = get_checkout_url()
-                if url:
-                    st.link_button("Upgrade for Unlimited AI", url, use_container_width=True)
-            except Exception as e:
-                st.error(f"Checkout error: {e}")
+    ask_ai_clicked = st.button("Get AI Retirement Insight", type="primary", use_container_width=True)
     if ask_ai_clicked:
         can_ask, message = user_can_ask_ai()
         if not can_ask:
-            st.error("You’ve used your free AI questions. Create an account and upgrade to keep going." if message == "Create an account to continue." else "Unlimited AI is a Pro feature. Upgrade to continue.")
+            if message == "limit":
+                st.warning("You've used all 50 AI questions included with your unlock.")
+            elif questions_left > 0:
+                # The paywall above is already on screen when the free cap is spent.
+                render_unlock_paywall("ai_click")
         elif not ai_question.strip():
             st.error("Please type a question first.")
         else:
             try:
                 with st.spinner("Thinking..."):
                     ai_response = get_real_ai_response(ai_question, results)
-                if not st.session_state.is_paid_user:
-                    st.session_state.ai_question_count += 1
+                st.session_state.ai_question_count = questions_used + 1
+                if st.session_state.user_logged_in and st.session_state.user_id:
+                    persist_ai_question_count(st.session_state.user_id, st.session_state.ai_question_count)
                 st.session_state.ai_chat_history.append({"question": ai_question, "answer": ai_response})
                 st.rerun()
             except Exception as e:
@@ -1286,52 +1646,13 @@ elif step == 7:
     st.markdown("---")
     st.markdown("## Save this plan")
     if not st.session_state.user_logged_in:
-        st.markdown("<div class='upgrade-card'><h3>Create a free account to keep going</h3><p class='muted'>You can start for free. Pro unlocks unlimited AI and saved plans.</p></div>", unsafe_allow_html=True)
-        login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
-        with login_tab:
-            login_email = st.text_input("Login Email", key="login_email")
-            login_password = st.text_input("Login Password", type="password", key="login_password")
-            if st.button("Log In", use_container_width=True):
-                if not login_email or not login_password:
-                    st.error("Please enter both email and password.")
-                else:
-                    response, error = sign_in_user(login_email, login_password)
-                    if error:
-                        st.error(f"Login failed: {error}")
-                    else:
-                        user = response.user
-                        st.session_state.user_logged_in = True
-                        st.session_state.user_email = user.email
-                        st.session_state.user_id = user.id
-                        ensure_user_profile(user.id, user.email)
-                        refresh_paid_status()
-                        st.rerun()
-        with signup_tab:
-            signup_email = st.text_input("Sign Up Email", key="signup_email")
-            signup_password = st.text_input("Create Password", type="password", key="signup_password")
-            if st.button("Create Account", use_container_width=True):
-                if not signup_email or not signup_password:
-                    st.error("Please enter both email and password.")
-                else:
-                    response, error = sign_up_user(signup_email, signup_password)
-                    if error:
-                        st.error(f"Sign up failed: {error}")
-                    else:
-                        try:
-                            user = response.user
-                            if user:
-                                ensure_user_profile(user.id, user.email)
-                        except Exception:
-                            pass
-                        st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
+        st.markdown(
+            "<div class='upgrade-card'><h3>Create a free account</h3><p class='muted'>The audit, score, and 3 AI questions stay free without an account. A free account is what checkout uses, and the $5 unlock keeps your plan on that account.</p></div>",
+            unsafe_allow_html=True,
+        )
+        render_auth_tabs("save")
     elif not st.session_state.is_paid_user:
-        st.markdown("<div class='upgrade-card'><h3>Upgrade to Pro</h3><p class='muted'>Unlock unlimited AI retirement planner questions, saved plans, and access from any device.</p><p><b>Only $1.99/month</b></p></div>", unsafe_allow_html=True)
-        try:
-            checkout_url = get_checkout_url()
-            if checkout_url:
-                st.link_button("Upgrade to Pro", checkout_url, use_container_width=True)
-        except Exception as e:
-            st.error(f"Checkout error: {e}")
+        render_unlock_paywall("save")
     else:
         scenario_name = st.text_input("Plan Name", value=st.session_state.get("scenario_name", "My Retirement Plan"), key="scenario_name")
         if st.button("Save Plan", use_container_width=True):
