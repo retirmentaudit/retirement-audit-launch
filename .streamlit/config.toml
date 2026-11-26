@@ -1,0 +1,4 @@
+[client]
+# Hide the developer toolbar. Community Cloud still injects Fork and the
+# GitHub icon as host toolbar items, so app.py also hides that cluster with CSS.
+toolbarMode = "minimal"

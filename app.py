@@ -52,8 +52,34 @@ if OPENAI_ENABLED:
 st.markdown(
     """
     <style>
-    .stApp { background: radial-gradient(circle at top left, #162033 0, #0e1117 35%, #090b10 100%); color: white; }
-    .stMarkdown, .stText, label, p, div, span { color: white !important; }
+    .stApp {
+        background: radial-gradient(circle at top left, #162033 0, #0e1117 35%, #090b10 100%);
+        color: #f8fafc;
+    }
+    /* Light text only on the dark app canvas. Widget surfaces set their own colors below
+       so alerts and buttons stay readable in both the light and dark Streamlit themes. */
+    [data-testid="stMarkdownContainer"] *,
+    [data-testid="stHeading"],
+    [data-testid="stHeading"] *,
+    [data-testid="stWidgetLabel"],
+    [data-testid="stWidgetLabel"] *,
+    [data-testid="stMetricLabel"],
+    [data-testid="stMetricLabel"] *,
+    [data-testid="stMetricValue"],
+    [data-testid="stMetricValue"] *,
+    [data-testid="stExpander"] details summary,
+    [data-testid="stExpander"] details summary *,
+    [data-testid="stRadio"] label,
+    [data-testid="stCheckbox"] label,
+    [data-testid="stTab"] p,
+    button[data-baseweb="tab"],
+    button[data-baseweb="tab"] p {
+        color: #f8fafc !important;
+    }
+    [data-testid="stCaptionContainer"],
+    [data-testid="stCaptionContainer"] * {
+        color: #d5deea !important;
+    }
     [data-testid="stSidebar"] { background-color: #0b0f17; }
     .hero-card {
         padding: 34px; border-radius: 24px;
@@ -63,7 +89,7 @@ st.markdown(
         margin-bottom: 20px;
     }
     .hero-title { font-size: 3rem; line-height: 1.05; font-weight: 800; margin-bottom: 14px; }
-    .hero-sub { font-size: 1.22rem; color: #d7deea !important; max-width: 820px; }
+    [data-testid="stMarkdownContainer"] .hero-sub { font-size: 1.22rem; color: #d7deea !important; max-width: 820px; }
     .pill { display: inline-block; padding: 7px 12px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); margin-right: 8px; margin-bottom: 8px; font-size: .92rem; }
     .step-card, .summary-card, .upgrade-card {
         padding: 22px; border-radius: 18px; background: rgba(21,27,35,.92);
@@ -74,18 +100,138 @@ st.markdown(
         border: 1px solid rgba(255,255,255,.11); height: 100%;
     }
     .big-metric { font-size: 2rem; font-weight: 800; margin-top: 6px; }
-    .muted { color: #b9c2d3 !important; }
-    .green { color: #34d399 !important; }
-    .yellow { color: #fbbf24 !important; }
-    .red { color: #fb7185 !important; }
+    [data-testid="stMarkdownContainer"] .muted { color: #b9c2d3 !important; }
+    [data-testid="stMarkdownContainer"] .green { color: #34d399 !important; }
+    [data-testid="stMarkdownContainer"] .yellow { color: #fbbf24 !important; }
+    [data-testid="stMarkdownContainer"] .red { color: #fb7185 !important; }
+    [data-testid="stMarkdownContainer"] .small-note { font-size: .9rem; color: #d5deea !important; }
     div.stButton > button, div.stLinkButton > a {
         border-radius: 12px !important; font-weight: 700 !important; min-height: 46px;
     }
-    .small-note { font-size: .9rem; color: #aab4c5 !important; }
+    /* Secondary buttons keep a light face and dark label in either theme. */
+    div.stButton > button[kind="secondary"],
+    div.stButton > button[data-testid="stBaseButton-secondary"] {
+        background-color: #f8fafc !important;
+        color: #111827 !important;
+        border: 1px solid #cbd5e1 !important;
+    }
+    div.stButton > button[kind="secondary"] *,
+    div.stButton > button[data-testid="stBaseButton-secondary"] * {
+        color: #111827 !important;
+    }
+    div.stButton > button[kind="primary"],
+    div.stButton > button[data-testid="stBaseButton-primary"] {
+        color: #ffffff !important;
+    }
+    div.stButton > button[kind="primary"] *,
+    div.stButton > button[data-testid="stBaseButton-primary"] * {
+        color: #ffffff !important;
+    }
+    div.stLinkButton > a[data-testid="stBaseLinkButton-secondary"],
+    div.stLinkButton > a[data-testid="stBaseLinkButton-secondary"] * {
+        background-color: #f8fafc !important;
+        color: #111827 !important;
+    }
+    div.stLinkButton > a[data-testid="stBaseLinkButton-primary"],
+    div.stLinkButton > a[data-testid="stBaseLinkButton-primary"] * {
+        color: #ffffff !important;
+    }
+    /* Alerts keep a light surface and dark text in both Streamlit themes.
+       The inner container carries the theme background, so set that too. */
+    div[data-testid="stAlert"] * {
+        color: #0f172a !important;
+    }
+    div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]) {
+        background-color: #edf5ff !important;
+        border: 1px solid #bfdbfe !important;
+    }
+    div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]) {
+        background-color: #fff1f2 !important;
+        border: 1px solid #fecdd3 !important;
+    }
+    div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) {
+        background-color: #ecfdf5 !important;
+        border: 1px solid #a7f3d0 !important;
+    }
+    div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) {
+        background-color: #fffbeb !important;
+        border: 1px solid #fde68a !important;
+    }
+    /* Community Cloud injects Fork and the GitHub icon as toolbar actions.
+       toolbarMode=minimal still shows host toolbar items, so hide that cluster. */
+    [data-testid="stToolbarActions"] {
+        display: none !important;
+    }
+    /* The creator-name script should not take up a row. */
+    [data-testid="stElementContainer"]:has(#creator-name-fix) {
+        height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+def install_creator_name_fix():
+    """Correct the visible Community Cloud creator name without touching its URL.
+
+    The profile popup is rendered by Streamlit Community Cloud in the parent page,
+    outside this app's CSS. The link still points at the existing profile.
+    """
+    st.html(
+        """
+        <script id="creator-name-fix">
+        (function () {
+          var root = window.parent || window;
+          if (root.__retirementAuditCreatorFix) return;
+          root.__retirementAuditCreatorFix = true;
+          var misspelled = "retirmentaudit";
+          var corrected = "retirementaudit";
+          function documents() {
+            var found = [];
+            try { if (window.parent && window.parent.document) found.push(window.parent.document); } catch (e) {}
+            try {
+              if (window.parent && window.parent.parent && window.parent.parent.document) {
+                found.push(window.parent.parent.document);
+              }
+            } catch (e) {}
+            return found;
+          }
+          function fixDoc(doc) {
+            if (!doc || !doc.body) return;
+            var walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
+            var node;
+            var pending = [];
+            while ((node = walker.nextNode())) {
+              if (node.nodeValue && node.nodeValue.indexOf(misspelled) !== -1) pending.push(node);
+            }
+            pending.forEach(function (textNode) {
+              textNode.nodeValue = textNode.nodeValue.split(misspelled).join(corrected);
+            });
+          }
+          function run() { documents().forEach(fixDoc); }
+          run();
+          documents().forEach(function (doc) {
+            try {
+              new MutationObserver(run).observe(doc.body, {subtree: true, childList: true, characterData: true});
+            } catch (e) {}
+          });
+        })();
+        </script>
+        """,
+        unsafe_allow_javascript=True,
+    )
+
+def render_creator_footer():
+    st.markdown(
+        "<p class='small-note'>Created by retirementaudit</p>",
+        unsafe_allow_html=True,
+    )
+
+install_creator_name_fix()
 
 # ==========================================================
 # SESSION DEFAULTS
@@ -146,7 +292,7 @@ DEFAULT_INPUT_VALUES = {
     "retirement_age": 65,
     "spouse1_age": 35,
     "spouse2_age": 35,
-    "avg_earn_sp1": 60000,
+    "avg_earn_sp1": 0,
     "avg_earn_sp2": 0,
     "use_manual_ss": False,
     "ss_start_sp1": 67,
@@ -460,6 +606,10 @@ Retirement score: {results['score']}/100 - {results['score_label']}
 User question:
 {user_question}
 """
+    if not results.get("score_ready", True):
+        user_context += """
+The user has not entered a balance or income amount. Do not present the retirement score as a real result. Tell them to enter at least one account balance, contribution, pension, home value, or earnings amount first.
+"""
     response = openai_client.responses.create(model="gpt-4.1-mini", instructions=system_instructions, input=user_context)
     return format_ai_response(response.output_text)
 
@@ -562,6 +712,66 @@ def account_inputs(spouse_label, spouse_key):
             st.number_input("Annual contribution", min_value=0.0, value=0.0, step=250.0, key=f"{spouse_key}_hsa_cont")
             st.number_input("Growth rate %", min_value=0.0, max_value=15.0, value=6.0, step=0.1, key=f"{spouse_key}_hsa_rate")
 
+def includes_spouse():
+    return st.session_state.get("planning_for", "Me + spouse") == "Me + spouse"
+
+def _positive_state(key):
+    return float(st.session_state.get(key) or 0) > 0
+
+def has_entered_balance_or_income():
+    """True when the user entered savings or income that a score can be based on.
+
+    A fresh plan starts with every balance and earnings field at zero. The old
+    $60,000 earnings example is no longer prefilled, so leaving the wizard blank
+    does not count as income.
+    """
+    people = ["spouse1"] + (["spouse2"] if includes_spouse() else [])
+    tracked = [
+        ("use_traditional_401k", ["trad_401k_bal", "trad_401k_cont", "trad_401k_match"]),
+        ("use_roth_401k", ["roth_401k_bal", "roth_401k_cont"]),
+        ("use_traditional_ira", ["trad_ira_bal", "trad_ira_cont"]),
+        ("use_roth_ira", ["roth_bal", "roth_cont"]),
+        ("use_hsa", ["hsa_bal", "hsa_cont"]),
+        ("use_brokerage", ["brok_bal", "brok_cont"]),
+    ]
+    for person in people:
+        for flag, suffixes in tracked:
+            if not st.session_state.get(f"{person}_{flag}", False):
+                continue
+            for suffix in suffixes:
+                if _positive_state(f"{person}_{suffix}"):
+                    return True
+    if st.session_state.get("use_pension", False):
+        if _positive_state("pen_sp1"):
+            return True
+        if includes_spouse() and _positive_state("pen_sp2"):
+            return True
+    if st.session_state.get("use_home_equity", False) and _positive_state("home_value"):
+        return True
+    if _positive_state("avg_earn_sp1"):
+        return True
+    if includes_spouse() and _positive_state("avg_earn_sp2"):
+        return True
+    if st.session_state.get("use_manual_ss", False):
+        if _positive_state("ss_ann_sp1"):
+            return True
+        if includes_spouse() and _positive_state("ss_ann_sp2"):
+            return True
+    return False
+
+def retirement_age_bounds(current_age: int):
+    """Keep the retirement-age field at or above the person's current age.
+
+    The previous slider started at 40 even when current age was higher, so the
+    target could default below the age entered on this step.
+    """
+    current_age = int(current_age)
+    min_age = max(current_age, 40)
+    max_age = max(80, current_age)
+    if min_age > max_age:
+        max_age = min_age
+    return min_age, max_age
+
 def read_accounts(spouse_key):
     accounts = {}
     account_defs = [
@@ -585,7 +795,7 @@ def read_accounts(spouse_key):
 
 def calculate_results():
     planning_for = st.session_state.get("planning_for", "Me + spouse")
-    include_spouse2 = planning_for == "Me + spouse"
+    include_spouse2 = includes_spouse()
     retirement_age = int(st.session_state.get("retirement_age", 65))
     sp1_age = int(st.session_state.get("spouse1_age", 35))
     sp2_age = int(st.session_state.get("spouse2_age", 35)) if include_spouse2 else sp1_age
@@ -634,7 +844,7 @@ def calculate_results():
     post_growth = post_growth_pct / 100
     annual_wd = total_invest * wd_rate if total_invest > 0 else 0
 
-    est_ss_sp1 = estimate_ss_pia(float(st.session_state.get("avg_earn_sp1", 60000) or 0))
+    est_ss_sp1 = estimate_ss_pia(float(st.session_state.get("avg_earn_sp1", 0) or 0))
     est_ss_sp2 = estimate_ss_pia(float(st.session_state.get("avg_earn_sp2", 0) or 0)) if include_spouse2 else 0
     if st.session_state.get("use_manual_ss", False):
         ss_annual_sp1 = float(st.session_state.get("ss_ann_sp1", est_ss_sp1) or 0)
@@ -740,6 +950,7 @@ def calculate_results():
         "pension_total": pension_annual_sp1 + pension_annual_sp2,
         "schedule_no_extra": schedule_no_extra,
         "schedule_with_extra": schedule_with_extra,
+        "score_ready": has_entered_balance_or_income(),
     }
 
 # ==========================================================
@@ -798,6 +1009,7 @@ if not st.session_state.started:
         st.markdown("<div class='summary-card'><h3>Money Lasts Estimate</h3><p class='muted'>See whether your projected investments last through retirement.</p></div>", unsafe_allow_html=True)
     with cols[2]:
         st.markdown("<div class='summary-card'><h3>AI Planner</h3><p class='muted'>Ask questions like: Can I retire at 60? Is 4% safe? What should I change?</p></div>", unsafe_allow_html=True)
+    render_creator_footer()
     st.stop()
 
 # ==========================================================
@@ -816,20 +1028,58 @@ if step == 1:
 
 elif step == 2:
     section_header(2, "Ages and retirement target", "This tells the calculator how many years your money has to grow.")
-    c1, c2, c3 = st.columns(3)
+    your_age = int(st.session_state.get("spouse1_age") or 35)
+    min_ret, max_ret = retirement_age_bounds(your_age)
+    target_age = int(st.session_state.get("retirement_age") or 65)
+    if target_age < min_ret:
+        target_age = min_ret
+    elif target_age > max_ret:
+        target_age = max_ret
+    st.session_state.retirement_age = target_age
+    if includes_spouse():
+        c1, c2, c3 = st.columns(3)
+    else:
+        c1, c3 = st.columns(2)
+        c2 = None
     with c1:
-        st.number_input("Your current age", min_value=18, max_value=90, value=35, step=1, key="spouse1_age")
-    if st.session_state.planning_for == "Me + spouse":
+        st.number_input(
+            "Your current age",
+            min_value=18,
+            max_value=90,
+            value=35,
+            step=1,
+            key="spouse1_age",
+            help="How old you are today. Starts at 35.",
+        )
+    if includes_spouse() and c2 is not None:
         with c2:
-            st.number_input("Spouse current age", min_value=18, max_value=90, value=35, step=1, key="spouse2_age")
+            st.number_input(
+                "Spouse's current age",
+                min_value=18,
+                max_value=90,
+                value=35,
+                step=1,
+                key="spouse2_age",
+                help="How old your spouse is today. Starts at 35. Used only when you choose Me + spouse.",
+            )
     with c3:
-        st.slider("Target retirement age", min_value=40, max_value=80, value=65, step=1, key="retirement_age")
+        st.number_input(
+            "Target retirement age",
+            min_value=min_ret,
+            max_value=max_ret,
+            value=target_age,
+            step=1,
+            key="retirement_age",
+            help="The age you plan to retire. Starts at 65, and is never set below your current age.",
+        )
+        shown_target = int(st.session_state.get("retirement_age") or target_age)
+        st.caption(f"Your current age is {your_age}. Target retirement age is {shown_target} and must be from {min_ret} to {max_ret}.")
     next_back_buttons()
 
 elif step == 3:
     section_header(3, "Retirement accounts", "Check only the accounts you have. Leave anything else blank.")
     account_inputs("You", "spouse1")
-    if st.session_state.planning_for == "Me + spouse":
+    if includes_spouse():
         st.markdown("---")
         account_inputs("Spouse", "spouse2")
     next_back_buttons()
@@ -839,20 +1089,28 @@ elif step == 4:
     st.markdown("#### Social Security estimator")
     c1, c2 = st.columns(2)
     with c1:
-        st.number_input("Your average annual earnings", min_value=0, max_value=300000, value=60000, step=1000, key="avg_earn_sp1")
+        st.number_input(
+            "Your average annual earnings",
+            min_value=0,
+            max_value=300000,
+            value=0,
+            step=1000,
+            key="avg_earn_sp1",
+            help="Used to estimate Social Security. For example, 60000. Leave at 0 if you have not entered income yet.",
+        )
         st.metric("Estimated annual SS at FRA", money(estimate_ss_pia(st.session_state.get("avg_earn_sp1", 0))))
-    if st.session_state.planning_for == "Me + spouse":
+    if includes_spouse():
         with c2:
             st.number_input("Spouse average annual earnings", min_value=0, max_value=300000, value=0, step=1000, key="avg_earn_sp2")
             st.metric("Estimated annual SS at FRA", money(estimate_ss_pia(st.session_state.get("avg_earn_sp2", 0))))
-    st.caption("This is a simplified estimate. For an exact estimate, use ssa.gov/myaccount.")
+    st.caption("Example: average earnings of $60,000 estimate about " + money(estimate_ss_pia(60000)) + " a year. This is a simplified estimate. For an exact estimate, use ssa.gov/myaccount.")
     st.checkbox("Use manual Social Security amounts", key="use_manual_ss")
     if st.session_state.get("use_manual_ss"):
         c3, c4 = st.columns(2)
         with c3:
             st.slider("Your claim age", 62, 70, 67, key="ss_start_sp1")
             st.number_input("Your annual SS at claim age", min_value=0, max_value=100000, value=int(estimate_ss_pia(st.session_state.get("avg_earn_sp1", 0))), step=1000, key="ss_ann_sp1")
-        if st.session_state.planning_for == "Me + spouse":
+        if includes_spouse():
             with c4:
                 st.slider("Spouse claim age", 62, 70, 67, key="ss_start_sp2")
                 st.number_input("Spouse annual SS at claim age", min_value=0, max_value=100000, value=int(estimate_ss_pia(st.session_state.get("avg_earn_sp2", 0))), step=1000, key="ss_ann_sp2")
@@ -863,7 +1121,7 @@ elif step == 4:
         with c5:
             st.number_input("Your annual pension", min_value=0, value=0, step=1000, key="pen_sp1")
             st.slider("Your pension COLA %", 0.0, 5.0, 2.0, step=0.1, key="pen_cola_sp1")
-        if st.session_state.planning_for == "Me + spouse":
+        if includes_spouse():
             with c6:
                 st.number_input("Spouse annual pension", min_value=0, value=0, step=1000, key="pen_sp2")
                 st.slider("Spouse pension COLA %", 0.0, 5.0, 2.0, step=0.1, key="pen_cola_sp2")
@@ -910,51 +1168,75 @@ elif step == 6:
         st.metric("First-year withdrawal", money(results["annual_wd"]))
     with c5:
         st.metric("Money lasts estimate", results["depletion_age_label"])
+    if not results["score_ready"]:
+        st.info("Enter at least one account balance, contribution, pension, home value, or earnings amount to get a Retirement Score. With those left blank, the dollars above stay at $0.")
     next_back_buttons("See My Results")
 
 elif step == 7:
     results = calculate_results()
     st.markdown("<span class='pill'>YOUR RETIREMENT AUDIT RESULTS</span>", unsafe_allow_html=True)
-    st.markdown(f"# Retirement Score: <span class='{results['score_class']}'>{results['score']} / 100</span>", unsafe_allow_html=True)
-    st.markdown(f"### {results['score_label']} outlook based on the assumptions you entered")
+    if not results["score_ready"]:
+        st.markdown(
+            """
+            <div class='step-card'>
+                <h2>Enter a balance or income to see your score</h2>
+                <p class='muted'>Add at least one account balance, contribution, pension, home value, or earnings amount. With those left blank, a Retirement Score would only reflect the default withdrawal assumptions (41/100, Needs attention) and every dollar result would be $0.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        prompt_accounts, prompt_income = st.columns(2)
+        with prompt_accounts:
+            if st.button("Enter account balances", type="primary", use_container_width=True):
+                st.session_state.wizard_step = 3
+                st.rerun()
+        with prompt_income:
+            if st.button("Enter income", use_container_width=True):
+                st.session_state.wizard_step = 4
+                st.rerun()
+    else:
+        st.markdown(f"# Retirement Score: <span class='{results['score_class']}'>{results['score']} / 100</span>", unsafe_allow_html=True)
+        st.markdown(f"### {results['score_label']} outlook based on the assumptions you entered")
+        if results["total_invest"] <= 0:
+            st.info("This score is based on invested savings and your withdrawal assumptions. Social Security, pension, and home equity are not part of the score, so with no investment balance it stays near the baseline.")
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.markdown(f"<div class='metric-card'><div class='muted'>Projected investments</div><div class='big-metric'>{money(results['total_invest'])}</div></div>", unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"<div class='metric-card'><div class='muted'>Projected net worth</div><div class='big-metric'>{money(results['total_nw'])}</div></div>", unsafe_allow_html=True)
-    with c3:
-        st.markdown(f"<div class='metric-card'><div class='muted'>First-year withdrawal</div><div class='big-metric'>{money(results['annual_wd'])}</div></div>", unsafe_allow_html=True)
-    with c4:
-        st.markdown(f"<div class='metric-card'><div class='muted'>Money lasts estimate</div><div class='big-metric'>{results['depletion_age_label']}</div></div>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.markdown(f"<div class='metric-card'><div class='muted'>Projected investments</div><div class='big-metric'>{money(results['total_invest'])}</div></div>", unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"<div class='metric-card'><div class='muted'>Projected net worth</div><div class='big-metric'>{money(results['total_nw'])}</div></div>", unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"<div class='metric-card'><div class='muted'>First-year withdrawal</div><div class='big-metric'>{money(results['annual_wd'])}</div></div>", unsafe_allow_html=True)
+        with c4:
+            st.markdown(f"<div class='metric-card'><div class='muted'>Money lasts estimate</div><div class='big-metric'>{results['depletion_age_label']}</div></div>", unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("## Your projection")
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(results["years_arr"], results["invest_growth"], label="Investments", linewidth=3)
-    if np.max(results["home_growth"]) > 0:
-        ax.plot(results["years_arr"], results["home_growth"], label="Home Equity", linewidth=3)
-    ax.plot(results["years_arr"], results["total_growth"], label="Total Net Worth", linewidth=4, linestyle="--")
-    ax.set_xlabel("Years from now")
-    ax.set_ylabel("Value ($)")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    st.pyplot(fig)
+        st.markdown("---")
+        st.markdown("## Your projection")
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(results["years_arr"], results["invest_growth"], label="Investments", linewidth=3)
+        if np.max(results["home_growth"]) > 0:
+            ax.plot(results["years_arr"], results["home_growth"], label="Home Equity", linewidth=3)
+        ax.plot(results["years_arr"], results["total_growth"], label="Total Net Worth", linewidth=4, linestyle="--")
+        ax.set_xlabel("Years from now")
+        ax.set_ylabel("Value ($)")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        st.pyplot(fig)
 
-    if results["total_invest"] > 0:
-        st.markdown("## Retirement withdrawal simulation")
-        years_post = np.arange(0, len(results["balances"]))
-        fig2, ax2 = plt.subplots(figsize=(12, 6))
-        ax2.plot(years_post, results["balances"], label="Portfolio Balance", linewidth=3)
-        ax2.axhline(results["total_invest"], linestyle="--", label="Starting Balance")
-        if results["depleted_year"] is not None:
-            ax2.axvline(results["depleted_year"], linestyle="--", label="Depletion Point")
-        ax2.set_xlabel("Years in retirement")
-        ax2.set_ylabel("Balance ($)")
-        ax2.set_title(f"Withdrawal at {results['wd_rate_pct']:.1f}% with {results['post_growth_pct']:.1f}% annual growth")
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-        st.pyplot(fig2)
+        if results["total_invest"] > 0:
+            st.markdown("## Retirement withdrawal simulation")
+            years_post = np.arange(0, len(results["balances"]))
+            fig2, ax2 = plt.subplots(figsize=(12, 6))
+            ax2.plot(years_post, results["balances"], label="Portfolio Balance", linewidth=3)
+            ax2.axhline(results["total_invest"], linestyle="--", label="Starting Balance")
+            if results["depleted_year"] is not None:
+                ax2.axvline(results["depleted_year"], linestyle="--", label="Depletion Point")
+            ax2.set_xlabel("Years in retirement")
+            ax2.set_ylabel("Balance ($)")
+            ax2.set_title(f"Withdrawal at {results['wd_rate_pct']:.1f}% with {results['post_growth_pct']:.1f}% annual growth")
+            ax2.legend()
+            ax2.grid(True, alpha=0.3)
+            st.pyplot(fig2)
 
     st.markdown("---")
     st.markdown("## Ask AI about your retirement plan")
@@ -1109,3 +1391,4 @@ Are you a licensed financial advisor interested in being featured in this app?
 
 **Email:** retirementaudit@gmail.com
 """)
+render_creator_footer()
