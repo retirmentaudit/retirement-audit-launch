@@ -27,6 +27,25 @@ If a paid visitor returns from Checkout and the app says the profile did not cha
 
 `APP_URL` should be the public app URL with no trailing path, for example `https://retirementaudit.streamlit.app`.
 
+## How the Retirement Score works
+
+The score asks whether retirement income covers a livable target, not only whether a flat withdrawal runs the portfolio to zero.
+
+- The target starts at **80% of current household income** (a common replacement rate). On the withdrawal step you can type a different monthly spending amount. That amount is in today's dollars.
+- Inflation, 2.5% unless you change it, grows the target to the retirement year and keeps growing it each year after that.
+- Income the plan can sustain is a **4%** withdrawal from the projected investments, plus Social Security (today's estimate, inflated to retirement) and any pension. Some planners, including Ramsey in some talks, mention withdrawal rates well above 4%. This score stays at 4% so a high score is the conservative reading. It is not a guarantee of returns.
+- Most of the points are the coverage ratio (sustainable income divided by the income you need). The rest are whether the portfolio can fund the gap until about age 95, whether savings are near 15% of income, and whether an entered mortgage is paid off by retirement. A mortgage is scored only if you entered one.
+
+The score, this sentence, and the charts stay free.
+
+Examples, using the same portfolios the old score used. "Before" is the previous formula.
+
+| Situation | Before | After |
+| --- | --- | --- |
+| $250,000 already at retirement, $60,000 income, Social Security about $28,150 | 71 | **69** Moderate. Covers about **79%** ($3,179/month of a $4,000 need). Not a 96. |
+| Age 55, $150,000 income, about $266,000 at retirement, saving $5,000 a year | 81 | **39** Needs attention. Covers about **46%**. |
+| Age 35, $80,000 income, saving $12,000 a year (15%), about $1.51 million at 65 | 96 | **99** Strong. Covers about **99%** and lasts to 95. |
+
 ## How a $5 payment is recorded
 
 Tapping **Unlock my full audit — $5** while signed out opens a short sign-up form right there (email and password, sign up first). The audit answers already on the page stay. When the account is ready, the same spot shows **Continue to $5 checkout**. If Supabase is set to require email confirmation, the page says to confirm the email and then log in; that log in continues to checkout.

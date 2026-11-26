@@ -94,6 +94,36 @@ def test_blank_plan_does_not_show_baseline_score():
     assert "Retirement Score:" not in text
 
 
+def test_landing_has_login_and_does_not_require_an_account():
+    at = AppTest.from_file(APP_PATH, default_timeout=30)
+    at.session_state["started"] = False
+    at.run()
+    assert not at.exception, at.exception
+    text = _markdown_text(at)
+    info = "\n".join(getattr(el, "value", "") or "" for el in at.info)
+    assert "Already have an account? Log in" in text
+    assert "No account needed to start" in text or "No account needed to start" in info
+    assert "Start My Free Retirement Audit" in _labels(at.button)
+    assert "Log in" in _labels(at.button)
+
+
+def test_results_show_livable_income_and_keep_the_score_free():
+    at = _boot(
+        wizard_step=7,
+        planning_for="Just me",
+        avg_earn_sp1=60000,
+        spouse1_use_traditional_401k=True,
+        spouse1_trad_401k_bal=250000,
+    )
+    text = _markdown_text(at)
+    assert "Retirement Score:" in text
+    assert "You'll need about" in text
+    assert "in today's dollars" in text
+    assert "Your plan covers about" in text
+    assert "Unlock your full Retirement Audit" in text
+    assert "41 / 100" not in text
+
+
 def test_earnings_alone_show_score_with_explanation():
     at = _boot(wizard_step=7, planning_for="Just me", avg_earn_sp1=60000)
     text = _markdown_text(at)

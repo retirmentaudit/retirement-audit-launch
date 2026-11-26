@@ -84,6 +84,11 @@ def build_audit_pdf(summary: dict, action_plan: str, chart_pngs: list[bytes] | N
     label = summary.get("score_label") or ""
     write(f"Retirement Score: {score} / 100 ({label})", 14, "B", 8)
     pdf.ln(1)
+    if summary.get("income_sentence"):
+        write(str(summary.get("income_sentence")), 11, "", 6)
+        if summary.get("income_next_step"):
+            write(str(summary.get("income_next_step")), 10, "", 5)
+        pdf.ln(1)
     rows = [
         ("Retirement age", str(summary.get("retirement_age"))),
         ("Projected investments", _money(summary.get("total_invest"))),
