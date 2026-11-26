@@ -18,7 +18,6 @@ _PLACEHOLDERS = {
     "SUPABASE_URL": "https://example.supabase.co",
     "SUPABASE_KEY": "local-demo-not-a-key",
     "STRIPE_SECRET_KEY": "sk_test_local_demo_not_a_key",
-    "STRIPE_PRICE_ID": "price_local_demo_subscription",
     "STRIPE_PRICE_ID_ONETIME": "price_local_demo_onetime",
     "APP_URL": "http://localhost:8501",
 }

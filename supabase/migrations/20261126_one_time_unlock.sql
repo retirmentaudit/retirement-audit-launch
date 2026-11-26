@@ -11,7 +11,7 @@ alter table public.user_profiles
   add column if not exists ai_questions_used integer not null default 0;
 
 comment on column public.user_profiles.paid_via is
-  'How this profile was unlocked: one_time ($5 payment) or subscription (legacy $1.99/month).';
+  'one_time for a $5 payment. subscription is only a marker for a profile that was already paid before this unlock; the app does not sell a subscription.';
 comment on column public.user_profiles.stripe_checkout_session_id is
   'Checkout Session id already applied. A repeat visit with the same id does not write again.';
 comment on column public.user_profiles.stripe_customer_id is
@@ -25,8 +25,9 @@ create unique index if not exists user_profiles_stripe_checkout_session_id_key
   on public.user_profiles (stripe_checkout_session_id)
   where stripe_checkout_session_id is not null;
 
--- Existing subscribers stay paid. Mark active and trialing rows, and remember
--- that their access came from the subscription rather than the $5 payment.
+-- Anyone who already paid stays unlocked. Mark active and trialing rows, and
+-- remember that those profiles were paid before the $5 unlock. The app does
+-- not start a new subscription.
 update public.user_profiles
 set is_paid_user = true,
     paid_via = coalesce(paid_via, 'subscription')

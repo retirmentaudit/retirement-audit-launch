@@ -1,6 +1,6 @@
 # Optional later step: `checkout.session.completed` webhook
 
-This function is **not required** for Retirement Audit to run or to unlock a $5 payment.
+This function is **not required** for Retirement Audit to run or to unlock a $5 payment. The app does not sell a subscription and does not use the Stripe billing portal.
 
 The Streamlit app unlocks the audit itself. On the success URL it retrieves the Checkout Session, checks `payment_status == "paid"`, checks that the session matches the logged-in user, and sets `is_paid_user` on that profile. Doing that twice is safe.
 

@@ -126,6 +126,19 @@ def test_younger_user_keeps_age_65_default_and_clear_range():
     assert "must be from 40 to 80" in _markdown_text(at)
 
 
+def test_subscription_checkout_and_billing_portal_are_gone():
+    import re
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert "billing_portal" not in source
+    assert "create_portal_session" not in source
+    assert "Upgrade to Pro" not in source
+    assert "$1.99" not in source
+    assert re.search(r"STRIPE_PRICE_ID(?!_ONETIME)", source) is None
+    assert 'mode="subscription"' not in source
+    assert "mode='subscription'" not in source
+
+
 def test_creator_footer_is_spelled_correctly_and_blank_text_rule_is_gone():
     at = _boot(wizard_step=1, planning_for="Just me")
     text = _markdown_text(at)

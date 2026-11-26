@@ -24,7 +24,6 @@ from local_demo import (
 )
 from pdf_report import build_audit_pdf
 from unlock import (
-    ACTIVE_SUBSCRIPTION_STATUSES,
     FREE_AI_QUESTION_LIMIT,
     ai_question_limit,
     fulfillment_decision,
@@ -46,14 +45,12 @@ REQUIRED_SECRETS = [
     "SUPABASE_URL",
     "SUPABASE_KEY",
     "STRIPE_SECRET_KEY",
-    "STRIPE_PRICE_ID",
     "APP_URL",
 ]
 
-# STRIPE_PRICE_ID_ONETIME is the new $5 price. It is not in REQUIRED_SECRETS so a
+# STRIPE_PRICE_ID_ONETIME is the $5 price. It is not in REQUIRED_SECRETS so a
 # missing value cannot take the free audit offline. Checkout refuses to start
-# until the secret is set. STRIPE_PRICE_ID stays required because existing
-# deploys already have it; active subscribers are still treated as paid.
+# until the secret is set. The old subscription price id is not read.
 _secrets = None
 try:
     _secrets = st.secrets
@@ -66,7 +63,6 @@ if missing_secrets:
     st.stop()
 
 APP_URL = str(read_secret(_secrets, "APP_URL")).rstrip("/")
-STRIPE_PRICE_ID = read_secret(_secrets, "STRIPE_PRICE_ID")
 STRIPE_PRICE_ID_ONETIME = read_secret(_secrets, "STRIPE_PRICE_ID_ONETIME")
 STRIPE_SECRET_KEY = read_secret(_secrets, "STRIPE_SECRET_KEY")
 LOCAL_DEMO = demo_active(STRIPE_SECRET_KEY)
@@ -640,7 +636,7 @@ def persist_ai_question_count(user_id: str, count: int):
         return "unsaved"
 
 def create_checkout_session(user_id: str, email: str | None = None):
-    """Create a one-time Checkout Session. Active subscribers are not sent here."""
+    """Create the $5 Checkout Session. This is the only purchase path."""
     params = onetime_checkout_params(user_id, email, STRIPE_PRICE_ID_ONETIME, APP_URL)
     if LOCAL_SANDBOX:
         # Screenshot mode must not create a live Checkout Session.
@@ -651,14 +647,6 @@ def retrieve_checkout_session(session_id: str):
     if LOCAL_SANDBOX:
         return demo_retrieved_session(session_id, st.session_state.get("user_id"), st.session_state.get("user_email"))
     return stripe.checkout.Session.retrieve(session_id)
-
-def create_portal_session(customer_id: str):
-    if LOCAL_SANDBOX:
-        raise RuntimeError("Billing portal is not available in local demo mode.")
-    if not customer_id:
-        raise ValueError("Missing Stripe customer ID.")
-    session = stripe.billing_portal.Session.create(customer=customer_id, return_url=APP_URL)
-    return session.url
 
 def get_checkout_url():
     if not st.session_state.user_logged_in or not st.session_state.user_id or st.session_state.is_paid_user:
@@ -895,12 +883,13 @@ def handle_checkout_return():
     st.session_state._checkout_url = None
     st.session_state._checkout_user_id = None
     if not session_id:
-        # Older subscription checkouts returned without a session id. Re-read the profile.
+        # A return without a session id cannot be confirmed. Re-read the profile
+        # so someone who is already unlocked stays unlocked.
         refresh_paid_status()
         if st.session_state.is_paid_user:
-            st.success("Payment confirmed. Your full audit is unlocked.")
+            st.success("Your full audit is unlocked.")
         else:
-            st.info("If you just finished a subscription checkout, refresh in a few seconds. New $5 payments include a checkout session id.")
+            st.info("This return did not include a checkout session id, so the $5 unlock was not applied.")
         return
     if not st.session_state.user_logged_in or not st.session_state.user_id:
         st.warning("Log in with the same account you used at checkout and this page will unlock the audit.")
@@ -947,9 +936,9 @@ def handle_checkout_return():
     elif decision["reason"] == "not_one_time":
         refresh_paid_status()
         if st.session_state.is_paid_user:
-            st.success("Your existing subscription is still unlocked.")
+            st.success("Your full audit is already unlocked.")
         else:
-            st.info("This checkout was not a one-time payment, so the $5 unlock was not applied.")
+            st.info("This checkout was not the $5 one-time payment, so the unlock was not applied.")
     else:
         st.info("Checkout returned, but the audit was not unlocked.")
 
@@ -1305,11 +1294,8 @@ with st.sidebar:
     if st.session_state.user_logged_in:
         st.success(f"Logged in: {st.session_state.user_email}")
         if st.session_state.is_paid_user:
-            status = str(st.session_state.subscription_status or "").lower()
             st.write("Plan: **Unlocked**")
-            if status in ACTIVE_SUBSCRIPTION_STATUSES or st.session_state.paid_via == "subscription":
-                st.caption("Existing subscription")
-            else:
+            if st.session_state.paid_via == "one_time":
                 st.caption("$5 once")
         else:
             st.write("Plan: **Free**")
