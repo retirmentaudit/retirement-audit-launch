@@ -27,6 +27,14 @@ If a paid visitor returns from Checkout and the app says the profile did not cha
 
 `APP_URL` should be the public app URL with no trailing path, for example `https://retirementaudit.streamlit.app`.
 
+## Scenario history
+
+Signed-in results are saved to `public.scenarios` (inputs, score, monthly need, percent covered, time, and a name). The migration is in `supabase/migrations/20261126_scenarios_history.sql`. It is not applied automatically. If that table is missing, the audit still runs.
+
+**My scenarios** is on the first page after log in, and in the sidebar. The list is newest first. Open one to see the full results again. Rename and delete are limited to that person's own rows. A paid unlock applies to every saved scenario. Free accounts can still see their saved scores.
+
+What an account stored before this change: `user_profiles` holds the login and paid flags, not the audit. `user_scenarios` holds named copies of the form inputs only (no score, no monthly need, no percent covered), and only a paid account can write them. Re-saving the same name overwrites that one copy. On the live project that table had 4 rows and `user_profiles` had 4 rows, one of them paid.
+
 ## How the Retirement Score works
 
 The score asks whether retirement income covers a livable target, not only whether a flat withdrawal runs the portfolio to zero.

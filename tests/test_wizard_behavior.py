@@ -94,6 +94,31 @@ def test_blank_plan_does_not_show_baseline_score():
     assert "Retirement Score:" not in text
 
 
+def test_signed_in_audit_is_listed_in_my_scenarios():
+    at = _boot(
+        wizard_step=7,
+        started=True,
+        user_logged_in=True,
+        user_id="user-1",
+        user_email="a@example.com",
+        planning_for="Just me",
+        avg_earn_sp1=60000,
+        spouse1_use_traditional_401k=True,
+        spouse1_trad_401k_bal=50000,
+    )
+    assert not at.exception, at.exception
+    at.session_state["show_my_scenarios"] = True
+    at.run()
+    assert not at.exception, at.exception
+    text = _markdown_text(at)
+    assert "My scenarios" in text
+    assert "/ 100" in text
+    labels = _labels(at.button)
+    assert "Open" in labels
+    assert "Rename" in labels
+    assert "Delete" in labels
+
+
 def test_landing_has_login_and_does_not_require_an_account():
     at = AppTest.from_file(APP_PATH, default_timeout=30)
     at.session_state["started"] = False

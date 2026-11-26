@@ -10,6 +10,12 @@ import io
 
 from action_plan import EDUCATIONAL_NOTE, generate_action_plan, plan_fingerprint
 from income_score import default_monthly_spending, livable_income_assessment
+from scenario_history import (
+    scenario_fingerprint,
+    scenario_record,
+    scenarios_table_missing,
+    sort_scenarios_newest_first,
+)
 from local_demo import (
     DEMO_EMAIL,
     DEMO_USER_ID,
@@ -77,7 +83,11 @@ OPENAI_ENABLED = bool(OPENAI_API_KEY)
 # ==========================================================
 SUPABASE_URL = read_secret(_secrets, "SUPABASE_URL")
 if LOCAL_DEMO and use_fake_supabase(SUPABASE_URL):
-    supabase = FakeSupabase()
+    # Keep the stand-in database on the browser session so a demo can save a
+    # scenario and still see it after the next rerun.
+    if "_demo_db" not in st.session_state:
+        st.session_state["_demo_db"] = {}
+    supabase = FakeSupabase(st.session_state["_demo_db"])
 else:
     supabase: Client = create_client(SUPABASE_URL, read_secret(_secrets, "SUPABASE_KEY"))
 stripe.api_key = STRIPE_SECRET_KEY
@@ -162,6 +172,10 @@ st.markdown(
     [data-testid="stMarkdownContainer"] .small-note { font-size: .9rem; color: #d5deea !important; }
     div.stButton > button, div.stLinkButton > a {
         border-radius: 12px !important; font-weight: 700 !important; min-height: 46px;
+    }
+    [data-testid="stTextInput"] input {
+        background-color: #f8fafc !important;
+        color: #111827 !important;
     }
     /* Secondary buttons keep a light face and dark label in either theme. */
     div.stButton > button[kind="secondary"],
@@ -680,6 +694,95 @@ def get_user_scenarios(user_id):
     except Exception as e:
         return None, str(e)
 
+def _remember_missing_scenarios_table(error: str) -> bool:
+    if scenarios_table_missing(error):
+        st.session_state["_scenarios_table_missing"] = True
+        return True
+    return False
+
+def list_saved_scenarios(user_id):
+    if st.session_state.get("_scenarios_table_missing"):
+        return [], "missing"
+    try:
+        result = supabase.table("scenarios").select("*").eq("user_id", user_id).execute()
+        return sort_scenarios_newest_first(result.data or []), None
+    except Exception as e:
+        if _remember_missing_scenarios_table(str(e)):
+            return [], "missing"
+        return [], str(e)
+
+def insert_scenario_history(user_id, name, inputs, results):
+    created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    row = scenario_record(user_id, name, inputs, results, created_at)
+    try:
+        saved = supabase.table("scenarios").insert(row).execute()
+        if not getattr(saved, "data", None):
+            return None, "empty"
+        return saved.data[0], None
+    except Exception as e:
+        if _remember_missing_scenarios_table(str(e)):
+            return None, "missing"
+        return None, str(e)
+
+def rename_saved_scenario(user_id, scenario_id, name):
+    try:
+        saved = (
+            supabase.table("scenarios")
+            .update({"name": name, "updated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat()})
+            .eq("user_id", user_id)
+            .eq("id", scenario_id)
+            .execute()
+        )
+        return bool(getattr(saved, "data", None)), None
+    except Exception as e:
+        if _remember_missing_scenarios_table(str(e)):
+            return False, "missing"
+        return False, str(e)
+
+def delete_saved_scenario(user_id, scenario_id):
+    try:
+        saved = supabase.table("scenarios").delete().eq("user_id", user_id).eq("id", scenario_id).execute()
+        if getattr(saved, "data", None) is None:
+            return False, "empty"
+        return True, None
+    except Exception as e:
+        if _remember_missing_scenarios_table(str(e)):
+            return False, "missing"
+        return False, str(e)
+
+def maybe_record_scenario(results):
+    """Save this audit once per distinct result for the signed-in person."""
+    if not results.get("score_ready"):
+        return
+    if not st.session_state.get("user_logged_in") or not st.session_state.get("user_id"):
+        return
+    if st.session_state.get("_scenarios_table_missing"):
+        return
+    inputs = collect_app_state()
+    fingerprint = scenario_fingerprint(inputs, results.get("score"), results.get("coverage_pct"))
+    if st.session_state.pop("_skip_next_scenario_save", None):
+        st.session_state["_last_scenario_fp"] = fingerprint
+        st.session_state["_last_scenario_user"] = st.session_state.user_id
+        return
+    if (
+        st.session_state.get("_last_scenario_fp") == fingerprint
+        and st.session_state.get("_last_scenario_user") == st.session_state.user_id
+    ):
+        return
+    name = (st.session_state.get("scenario_name") or "").strip()
+    if not name or name == "My Retirement Plan":
+        name = "Audit " + datetime.now().strftime("%b %d, %Y %H:%M")
+    saved, error = insert_scenario_history(st.session_state.user_id, name, inputs, results)
+    if error == "missing":
+        return
+    if error or not saved:
+        st.session_state["_scenario_save_error"] = True
+        return
+    st.session_state["_scenario_save_error"] = False
+    st.session_state["_last_scenario_fp"] = fingerprint
+    st.session_state["_last_scenario_user"] = st.session_state.user_id
+    st.session_state["_last_scenario_id"] = saved.get("id")
+
 def save_scenario_to_supabase(user_id, scenario_name, scenario_data):
     try:
         existing = supabase.table("user_scenarios").select("id").eq("user_id", user_id).eq("scenario_name", scenario_name).execute()
@@ -779,16 +882,11 @@ def complete_login(response, continue_to_checkout: bool = False, open_saved_plan
     if continue_to_checkout and not st.session_state.is_paid_user:
         st.session_state._pending_checkout = True
     if open_saved_plan:
-        scenarios, _error = get_user_scenarios(user.id)
-        saved = saved_scenario_record(scenarios[0]) if scenarios else None
-        if saved and saved["data"]:
-            st.session_state["_open_results_after_load"] = True
-            st.session_state["_scenario_to_apply"] = saved["data"]
-            name = saved.get("name")
-            st.session_state["_scenario_loaded_message"] = f"Plan loaded: {name}" if name else "Plan loaded."
-            st.session_state["_no_saved_plan"] = False
-        else:
-            st.session_state["_no_saved_plan"] = True
+        on_results = bool(st.session_state.get("started")) and int(st.session_state.get("wizard_step") or 0) == 7
+        # A finished audit stays on the results page and is saved there.
+        # A log in from the first page opens the scenario list.
+        if not on_results:
+            st.session_state["show_my_scenarios"] = True
     st.rerun()
 
 def render_auth_tabs(key_prefix: str, signup_first: bool = False, continue_to_checkout: bool = False):
@@ -1367,6 +1465,9 @@ def calculate_results():
         "income_sentence": assessment["sentence"],
         "income_next_step": assessment["next_step"],
         "coverage_pct": assessment["coverage_pct"],
+        "monthly_need": assessment["needed_monthly_future"],
+        "monthly_need_today": assessment["needed_monthly_today"],
+        "monthly_covered": assessment["covered_monthly_future"],
         "schedule_no_extra": schedule_no_extra,
         "schedule_with_extra": schedule_with_extra,
         "score_ready": has_entered_balance_or_income(),
@@ -1387,6 +1488,9 @@ with st.sidebar:
                 st.caption("$5 once")
         else:
             st.write("Plan: **Free**")
+        if st.button("My scenarios", use_container_width=True):
+            st.session_state["show_my_scenarios"] = True
+            st.rerun()
         if st.button("Log out", use_container_width=True):
             sign_out_user()
             st.rerun()
@@ -1397,6 +1501,104 @@ with st.sidebar:
         st.session_state.started = False
         st.session_state.wizard_step = 1
         st.rerun()
+
+# ==========================================================
+# MY SCENARIOS
+# ==========================================================
+def _format_scenario_date(value):
+    text = str(value or "")
+    return text.replace("T", " ").replace("+00:00", " UTC")
+
+def render_my_scenarios():
+    st.markdown("## My scenarios")
+    if st.session_state.is_paid_user:
+        st.caption("Your unlock covers every saved scenario. Newest first.")
+    else:
+        st.caption("Your saved scores are listed here. The $5 unlock adds the action plan and PDF on any of them. Newest first.")
+    if st.button("Back", key="scenarios_back"):
+        st.session_state["show_my_scenarios"] = False
+        st.rerun()
+    rows, error = list_saved_scenarios(st.session_state.user_id)
+    if error == "missing":
+        st.info("Scenario history isn't available yet. The audit still works. Run the scenarios migration when you are ready.")
+        return
+    if error:
+        st.error("Couldn't load scenarios.")
+        return
+    if not rows:
+        st.info("No saved scenarios yet. Finish an audit while you are signed in and it will show up here.")
+        return
+    for row in rows:
+        scenario_id = row.get("id")
+        name = row.get("name") or "My scenario"
+        score = row.get("score")
+        label = row.get("score_label") or ""
+        covered = row.get("percent_covered")
+        st.markdown("---")
+        left, mid, right = st.columns([2.2, 1, 1.4])
+        with left:
+            st.markdown(f"**{name}**")
+            st.caption(_format_scenario_date(row.get("created_at")))
+        with mid:
+            score_text = f"{score} / 100" if score is not None else "No score"
+            if label:
+                score_text = f"{score_text} · {label}"
+            st.markdown(score_text)
+            if covered is not None:
+                st.caption(f"{covered}% of needed income")
+        with right:
+            if st.button("Open", key=f"open_scenario_{scenario_id}", use_container_width=True):
+                data = row.get("inputs") or {}
+                if isinstance(data, str):
+                    try:
+                        data = json.loads(data)
+                    except Exception:
+                        data = {}
+                st.session_state["show_my_scenarios"] = False
+                st.session_state["_skip_next_scenario_save"] = True
+                st.session_state["_open_results_after_load"] = True
+                st.session_state["_scenario_to_apply"] = data if isinstance(data, dict) else {}
+                st.session_state["_scenario_loaded_message"] = f"Plan loaded: {name}"
+                st.session_state["scenario_name"] = name
+                st.rerun()
+        rename_key = f"rename_scenario_{scenario_id}"
+        new_name = st.text_input("Name", value=name, key=rename_key)
+        rename_col, delete_col = st.columns(2)
+        with rename_col:
+            if st.button("Rename", key=f"rename_btn_{scenario_id}", use_container_width=True):
+                cleaned = (new_name or "").strip()
+                if not cleaned:
+                    st.error("Enter a name.")
+                else:
+                    ok, rename_error = rename_saved_scenario(st.session_state.user_id, scenario_id, cleaned)
+                    if rename_error == "missing":
+                        st.info("Scenario history isn't available yet.")
+                    elif not ok:
+                        st.error("Couldn't rename that scenario.")
+                    else:
+                        st.rerun()
+        with delete_col:
+            if st.session_state.get("_confirm_delete_scenario") == scenario_id:
+                if st.button("Confirm delete", key=f"confirm_delete_{scenario_id}", use_container_width=True):
+                    ok, delete_error = delete_saved_scenario(st.session_state.user_id, scenario_id)
+                    st.session_state["_confirm_delete_scenario"] = None
+                    if delete_error == "missing":
+                        st.info("Scenario history isn't available yet.")
+                    elif not ok:
+                        st.error("Couldn't delete that scenario.")
+                    else:
+                        st.rerun()
+            elif st.button("Delete", key=f"delete_scenario_{scenario_id}", use_container_width=True):
+                st.session_state["_confirm_delete_scenario"] = scenario_id
+                st.rerun()
+
+if st.session_state.get("show_my_scenarios"):
+    if not st.session_state.user_logged_in:
+        st.session_state["show_my_scenarios"] = False
+    else:
+        render_my_scenarios()
+        render_creator_footer()
+        st.stop()
 
 # ==========================================================
 # LANDING PAGE
@@ -1422,8 +1624,9 @@ if not st.session_state.started:
     with login_col:
         if st.session_state.user_logged_in:
             st.success(f"Logged in as {st.session_state.user_email}")
-            if st.session_state.get("_no_saved_plan"):
-                st.caption("No saved plan yet. Start the free audit below. No account needed to start a new one.")
+            if st.button("My scenarios", use_container_width=True, key="landing_my_scenarios"):
+                st.session_state["show_my_scenarios"] = True
+                st.rerun()
         else:
             st.markdown("**Already have an account? Log in**")
             landing_email = st.text_input("Email", key="landing_login_email")
@@ -1645,7 +1848,12 @@ elif step == 6:
 
 elif step == 7:
     results = calculate_results()
+    maybe_record_scenario(results)
     st.markdown("<span class='pill'>YOUR RETIREMENT AUDIT RESULTS</span>", unsafe_allow_html=True)
+    if st.session_state.get("_scenarios_table_missing") and st.session_state.get("user_logged_in"):
+        st.caption("Scenario history isn't available yet. This audit still works.")
+    elif st.session_state.get("_scenario_save_error"):
+        st.caption("This result could not be added to My scenarios. You can still read it here.")
     if not results["score_ready"]:
         st.markdown(
             """
