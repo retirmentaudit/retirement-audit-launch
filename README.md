@@ -29,6 +29,8 @@ If a paid visitor returns from Checkout and the app says the profile did not cha
 
 ## How a $5 payment is recorded
 
+Tapping **Unlock my full audit — $5** while signed out opens a short sign-up form right there (email and password, sign up first). The audit answers already on the page stay. When the account is ready, the same spot shows **Continue to $5 checkout**. If Supabase is set to require email confirmation, the page says to confirm the email and then log in; that log in continues to checkout.
+
 Checkout is `mode="payment"` with the one-time price. The success URL includes the literal `{CHECKOUT_SESSION_ID}` placeholder. When the buyer comes back, the app retrieves that Checkout Session, requires `payment_status == "paid"`, and requires the session to match the logged-in user (`client_reference_id`, or email if the reference id is absent). It then sets `is_paid_user`, `paid_via = one_time`, and `stripe_checkout_session_id` on that profile. Opening the same success URL again does not write a second time.
 
 A profile stays unlocked when `is_paid_user` is true or when `subscription_status` is `active` or `trialing`. That read is only so someone who already paid is not locked out. The app does not create a subscription Checkout Session, and it does not change an `active` or `trialing` status into something else when a $5 payment is recorded.

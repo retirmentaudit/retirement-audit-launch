@@ -9,14 +9,18 @@ from action_plan import (
     illustrated_extra_annual_savings,
 )
 from pdf_report import build_audit_pdf
+from types import SimpleNamespace
+
 from unlock import (
     FREE_AI_QUESTION_LIMIT,
     PAID_AI_QUESTION_LIMIT,
     ai_question_limit,
     fulfillment_decision,
+    login_failure_message,
     merged_question_count,
     onetime_checkout_params,
     profile_is_paid,
+    signup_needs_email_confirmation,
     user_can_ask,
 )
 
@@ -112,6 +116,19 @@ def test_one_time_payment_does_not_clear_an_active_subscription():
     assert "subscription_status" not in decision["update"]
     assert decision["update"]["paid_via"] == "one_time"
     assert "paid_at" not in decision["update"]
+
+
+def test_email_confirmation_is_detected_and_explained():
+    waiting = SimpleNamespace(user=SimpleNamespace(email="a@example.com"), session=None)
+    ready = SimpleNamespace(user=SimpleNamespace(email="a@example.com"), session=SimpleNamespace(access_token="token"))
+    assert signup_needs_email_confirmation(waiting) is True
+    assert signup_needs_email_confirmation(ready) is False
+    assert signup_needs_email_confirmation(None) is False
+    message = login_failure_message("Email not confirmed")
+    assert "Confirm your email" in message
+    assert "$5 checkout" in message
+    assert "No subscription." in message
+    assert login_failure_message("Invalid login credentials").startswith("Login failed:")
 
 
 def test_question_caps_are_3_free_and_50_paid():
