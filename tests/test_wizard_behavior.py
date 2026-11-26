@@ -1,10 +1,13 @@
-"""Behavior checks for the retirement wizard fixes.
+"""Behavior checks for the retirement wizard and the $5 unlock.
 
-These run the Streamlit script with local dummy secrets (gitignored) and do not
-call OpenAI, Stripe, or a real Supabase project.
+RETIREMENT_AUDIT_LOCAL_DEMO stubs Stripe and Supabase. These tests do not call
+OpenAI, Stripe, or a real Supabase project.
 """
 
+import os
 from pathlib import Path
+
+os.environ["RETIREMENT_AUDIT_LOCAL_DEMO"] = "1"
 
 from streamlit.testing.v1 import AppTest
 
@@ -123,6 +126,19 @@ def test_younger_user_keeps_age_65_default_and_clear_range():
     assert "must be from 40 to 80" in _markdown_text(at)
 
 
+def test_subscription_checkout_and_billing_portal_are_gone():
+    import re
+
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert "billing_portal" not in source
+    assert "create_portal_session" not in source
+    assert "Upgrade to Pro" not in source
+    assert "$1.99" not in source
+    assert re.search(r"STRIPE_PRICE_ID(?!_ONETIME)", source) is None
+    assert 'mode="subscription"' not in source
+    assert "mode='subscription'" not in source
+
+
 def test_creator_footer_is_spelled_correctly_and_blank_text_rule_is_gone():
     at = _boot(wizard_step=1, planning_for="Just me")
     text = _markdown_text(at)
@@ -130,3 +146,69 @@ def test_creator_footer_is_spelled_correctly_and_blank_text_rule_is_gone():
     assert "Created by retirmentaudit" not in text
     assert "div, span { color: white !important; }" not in text
     assert 'toolbarMode = "minimal"' in (ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
+    assert 'data-testid="stToolbarActions"' in (ROOT / "app.py").read_text(encoding="utf-8")
+
+
+def test_free_results_keep_the_score_and_show_the_one_time_unlock():
+    at = _boot(
+        wizard_step=7,
+        planning_for="Just me",
+        spouse1_use_traditional_401k=True,
+        spouse1_trad_401k_bal=50000,
+    )
+    text = _markdown_text(at)
+    assert "Retirement Score:" in text
+    assert "Unlock your full Retirement Audit — $5 once" in text
+    assert "No subscription." in text
+    assert "$1.99" not in text
+    assert "Upgrade to Pro" not in text
+    assert "Unlock my full audit — $5" in _labels(at.button)
+    assert at.download_button == []
+
+
+def test_paid_results_include_the_action_plan_and_pdf_without_hiding_the_score():
+    at = _boot(
+        wizard_step=7,
+        planning_for="Just me",
+        is_paid_user=True,
+        spouse1_use_traditional_401k=True,
+        spouse1_trad_401k_bal=50000,
+    )
+    text = _markdown_text(at)
+    assert "Retirement Score:" in text
+    assert "What to change first" in text
+    assert "How much to save" in text
+    assert "Social Security claiming note" in text
+    assert "Educational, not financial advice" in text
+    assert "Unlock your full Retirement Audit" not in text
+    assert any("PDF" in (button.label or "") for button in at.download_button)
+
+
+def test_exhausted_free_questions_show_the_same_paywall():
+    at = _boot(
+        wizard_step=7,
+        planning_for="Just me",
+        spouse1_use_traditional_401k=True,
+        spouse1_trad_401k_bal=50000,
+        ai_question_count=3,
+    )
+    text = _markdown_text(at)
+    assert text.count("Unlock your full Retirement Audit — $5 once") >= 2
+    assert "You've used your 3 free AI questions." in text or "You've used your 3 free AI questions." in "\n".join(
+        getattr(el, "value", "") or "" for el in at.caption
+    )
+
+
+def test_returned_demo_checkout_unlocks_without_calling_stripe():
+    at = AppTest.from_file(APP_PATH, default_timeout=30)
+    at.query_params["checkout"] = "success"
+    at.query_params["session_id"] = "cs_demo_paid"
+    at.query_params["demo_sample"] = "1"
+    at.run()
+    assert not at.exception, at.exception
+    text = _markdown_text(at)
+    joined = text + "\n" + "\n".join(getattr(el, "value", "") or "" for el in at.success)
+    assert "Payment confirmed" in joined
+    assert "Retirement Score:" in text
+    assert "What to change first" in text
+    assert "one-time" in joined.lower() or "already unlocked" in joined.lower()
