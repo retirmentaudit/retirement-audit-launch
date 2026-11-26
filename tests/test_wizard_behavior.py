@@ -201,6 +201,11 @@ def test_creator_footer_is_spelled_correctly_and_blank_text_rule_is_gone():
     assert "Created by retirmentaudit" not in text
     assert "div, span { color: white !important; }" not in text
     assert 'toolbarMode = "minimal"' in (ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert '[data-testid="stTextArea"] textarea' in stylesheet
+    assert "-webkit-text-fill-color: #111827 !important;" in stylesheet
+    assert "caret-color: #111827 !important;" in stylesheet
+    assert "textarea::placeholder" in stylesheet
     assert 'data-testid="stToolbarActions"' in (ROOT / "app.py").read_text(encoding="utf-8")
 
 
