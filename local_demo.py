@@ -82,6 +82,10 @@ class _Query:
     def order(self, *args, **kwargs):
         return self
 
+    def delete(self):
+        self.op = "delete"
+        return self
+
     def execute(self):
         rows = self.store.setdefault(self.table, [])
         if self.op == "insert":
@@ -94,14 +98,18 @@ class _Query:
             for row in matched:
                 row.update(self.payload or {})
             return _Result([dict(row) for row in matched])
+        if self.op == "delete":
+            removed = matched
+            self.store[self.table] = [row for row in rows if row not in removed]
+            return _Result([dict(row) for row in removed])
         return _Result([dict(row) for row in matched])
 
 
 class FakeSupabase:
     """In-memory stand-in. It never opens a network connection."""
 
-    def __init__(self):
-        self.store = {}
+    def __init__(self, store=None):
+        self.store = store if store is not None else {}
         self.auth = self._Auth()
 
     def table(self, name: str):
