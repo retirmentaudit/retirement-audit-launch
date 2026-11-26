@@ -9,6 +9,7 @@ import json
 import io
 
 from action_plan import EDUCATIONAL_NOTE, generate_action_plan, plan_fingerprint
+from income_score import default_monthly_spending, livable_income_assessment
 from local_demo import (
     DEMO_EMAIL,
     DEMO_USER_ID,
@@ -331,7 +332,8 @@ SCENARIO_KEYS = [
     "use_pension", "pen_sp1", "pen_sp2", "pen_cola_sp1", "pen_cola_sp2",
     "use_home_equity", "home_value", "mortgage_balance", "home_appreciation_pct", "include_home",
     "use_mortgage_calc", "mort_principal", "mort_rate_pct", "mort_years", "monthly_payment", "extra_monthly",
-    "wd_rate_pct", "post_growth_pct",
+    "wd_rate_pct", "post_growth_pct", "inflation_pct",
+    "retirement_monthly_spend", "retirement_spending_custom",
 ]
 
 
@@ -372,6 +374,9 @@ DEFAULT_INPUT_VALUES = {
     "extra_monthly": 0.0,
     "wd_rate_pct": 4.5,
     "post_growth_pct": 6.0,
+    "inflation_pct": 2.5,
+    "retirement_monthly_spend": 0.0,
+    "retirement_spending_custom": False,
 }
 
 for spouse in ["spouse1", "spouse2"]:
@@ -506,6 +511,10 @@ def apply_queued_scenario_if_needed():
     for key, value in saved_data.items():
         st.session_state[key] = value
     st.session_state["_scenario_to_apply"] = None
+    # A returning login should land on results, not whichever wizard step was saved.
+    if st.session_state.pop("_open_results_after_load", None):
+        st.session_state.started = True
+        st.session_state.wizard_step = 7
 
 # ==========================================================
 # AUTH / PROFILE HELPERS
@@ -715,6 +724,7 @@ Portfolio depletion age estimate: {results['depletion_age_label']}
 Annual Social Security total: ${results['ss_total']:,.0f}
 Annual pension total: ${results['pension_total']:,.0f}
 Retirement score: {results['score']}/100 - {results['score_label']}
+{results.get('income_sentence') or ''}
 
 User question:
 {user_question}
@@ -739,7 +749,21 @@ def query_value(name: str):
         return value[0] if value else None
     return value
 
-def complete_login(response, continue_to_checkout: bool = False):
+def saved_scenario_record(item):
+    """Turn one saved-plan row into a name plus a dict of inputs."""
+    if not item:
+        return None
+    data = item.get("scenario_data") or {}
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except Exception:
+            data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return {"name": item.get("scenario_name"), "data": data}
+
+def complete_login(response, continue_to_checkout: bool = False, open_saved_plan: bool = False):
     """Sign the browser in without clearing the audit answers already on the page."""
     user = response.user if response is not None else None
     if user is None:
@@ -754,6 +778,17 @@ def complete_login(response, continue_to_checkout: bool = False):
     refresh_paid_status()
     if continue_to_checkout and not st.session_state.is_paid_user:
         st.session_state._pending_checkout = True
+    if open_saved_plan:
+        scenarios, _error = get_user_scenarios(user.id)
+        saved = saved_scenario_record(scenarios[0]) if scenarios else None
+        if saved and saved["data"]:
+            st.session_state["_open_results_after_load"] = True
+            st.session_state["_scenario_to_apply"] = saved["data"]
+            name = saved.get("name")
+            st.session_state["_scenario_loaded_message"] = f"Plan loaded: {name}" if name else "Plan loaded."
+            st.session_state["_no_saved_plan"] = False
+        else:
+            st.session_state["_no_saved_plan"] = True
     st.rerun()
 
 def render_auth_tabs(key_prefix: str, signup_first: bool = False, continue_to_checkout: bool = False):
@@ -897,6 +932,8 @@ def render_paid_action_plan(results: dict, chart_pngs: list[bytes]):
         "depletion_label": results.get("depletion_age_label"),
         "ss_annual": results.get("ss_total"),
         "pension_annual": results.get("pension_total"),
+        "income_sentence": results.get("income_sentence"),
+        "income_next_step": results.get("income_next_step"),
     }
     generated_on = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     pdf_bytes = build_audit_pdf(summary, plan["text"], chart_pngs, generated_on=generated_on)
@@ -1197,13 +1234,13 @@ def calculate_results():
         schedule_no_extra = amortization_schedule(mort_principal, mort_rate, monthly_payment, 0)
         schedule_with_extra = amortization_schedule(mort_principal, mort_rate, monthly_payment, extra_monthly)
 
+    if use_mortgage_calc and schedule_no_extra["amortizes"]:
+        mortgage_at_retirement = projected_mortgage_balance(schedule_no_extra["balances"], max_years)
+    else:
+        mortgage_at_retirement = mortgage_balance
     if include_home:
         home_proj_value = home_value * (1 + home_appreciation) ** max_years
-        if use_mortgage_calc and schedule_no_extra["amortizes"]:
-            mortgage_at_ret = projected_mortgage_balance(schedule_no_extra["balances"], max_years)
-        else:
-            mortgage_at_ret = mortgage_balance
-        home_proj_equity = max(home_proj_value - mortgage_at_ret, 0.0)
+        home_proj_equity = max(home_proj_value - mortgage_at_retirement, 0.0)
     else:
         home_proj_equity = 0.0
 
@@ -1250,30 +1287,39 @@ def calculate_results():
         depletion_age_label = f"Around age {retirement_age + depleted_year}"
         years_last = depleted_year
 
-    score = 30
-    if total_invest > 0:
-        score += min(30, max_years + 5)
-    if years_last >= 35:
-        score += 25
-    elif years_last >= 25:
-        score += 18
-    elif years_last >= 15:
-        score += 10
-    if wd_rate_pct <= 4.0:
-        score += 10
-    elif wd_rate_pct <= 5.0:
-        score += 6
-    if post_growth_pct <= 7.0:
-        score += 5
-    else:
-        score += 2
-    score = max(0, min(100, int(score)))
-    if score >= 80:
-        score_label, score_class = "Strong", "green"
-    elif score >= 60:
-        score_label, score_class = "Moderate", "yellow"
-    else:
-        score_label, score_class = "Needs attention", "red"
+    annual_savings = 0.0
+    for spouse_accounts in accounts.values():
+        for acc in spouse_accounts.values():
+            annual_savings += float(acc.get("contrib") or 0) + float(acc.get("employer_match") or 0)
+    household_income = float(st.session_state.get("avg_earn_sp1") or 0)
+    if include_spouse2:
+        household_income += float(st.session_state.get("avg_earn_sp2") or 0)
+    pension_cola = 0.0
+    pension_dollars = pension_annual_sp1 + pension_annual_sp2
+    if pension_dollars > 0:
+        pension_cola = (
+            pension_annual_sp1 * float(st.session_state.get("pen_cola_sp1") or 0)
+            + pension_annual_sp2 * float(st.session_state.get("pen_cola_sp2") or 0)
+        ) / pension_dollars / 100
+    custom_spending = bool(st.session_state.get("retirement_spending_custom"))
+    assessment = livable_income_assessment(
+        retirement_age=retirement_age,
+        years_to_retirement=max_years,
+        household_income_today=household_income,
+        monthly_spending_today=float(st.session_state.get("retirement_monthly_spend") or 0) if custom_spending else None,
+        inflation_rate=float(st.session_state.get("inflation_pct", 2.5) or 0) / 100,
+        portfolio_at_retirement=total_invest,
+        annual_savings=annual_savings,
+        ss_annual_today=ss_annual_sp1 + ss_annual_sp2,
+        pension_annual_at_retirement=pension_dollars,
+        pension_cola=pension_cola,
+        portfolio_growth_in_retirement=post_growth,
+        debt_collected=bool(use_mortgage_calc or mortgage_balance > 0),
+        mortgage_at_retirement=mortgage_at_retirement,
+    )
+    score = assessment["score"]
+    score_label = assessment["score_label"]
+    score_class = assessment["score_class"]
 
     years_arr = np.arange(0, max_years + 6)
     invest_growth = np.zeros(len(years_arr))
@@ -1289,7 +1335,7 @@ def calculate_results():
         invest_growth[i] = total_y
         if include_home:
             future_home_value = home_value * (1 + home_appreciation) ** y
-            future_mortgage_balance = projected_mortgage_balance(schedule_no_extra["balances"], y) if use_mortgage_calc and schedule_no_extra["amortizes"] else mortgage_balance
+            future_mortgage_balance = projected_mortgage_balance(schedule_no_extra["balances"], y) if use_mortgage_calc and schedule_no_extra["amortizes"] else mortgage_at_retirement
             home_growth[i] = max(future_home_value - future_mortgage_balance, 0.0)
 
     return {
@@ -1318,6 +1364,9 @@ def calculate_results():
         "total_growth": invest_growth + home_growth,
         "ss_total": ss_annual_sp1 + ss_annual_sp2,
         "pension_total": pension_annual_sp1 + pension_annual_sp2,
+        "income_sentence": assessment["sentence"],
+        "income_next_step": assessment["next_step"],
+        "coverage_pct": assessment["coverage_pct"],
         "schedule_no_extra": schedule_no_extra,
         "schedule_with_extra": schedule_with_extra,
         "score_ready": has_entered_balance_or_income(),
@@ -1352,19 +1401,43 @@ with st.sidebar:
 # ==========================================================
 # LANDING PAGE
 # ==========================================================
+def _mark_retirement_spending_custom():
+    st.session_state["retirement_spending_custom"] = True
+
 if not st.session_state.started:
-    st.markdown(
-        """
-        <div class='hero-card'>
-            <span class='pill'>FREE RETIREMENT AUDIT</span>
-            <span class='pill'>Takes about 4 minutes</span>
-            <div class='hero-title'>Know if your retirement plan will actually last.</div>
-            <p class='hero-sub'>Project retirement accounts, Social Security, home equity, withdrawals, and then ask an AI retirement planner questions based on your numbers.</p>
-            <p><span class='pill'>✓ See if your money lasts</span><span class='pill'>✓ Test retirement ages</span><span class='pill'>✓ Compare withdrawal rates</span><span class='pill'>✓ Ask AI about your plan</span></p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    hero_col, login_col = st.columns([2.3, 1], vertical_alignment="top")
+    with hero_col:
+        st.markdown(
+            """
+            <div class='hero-card'>
+                <span class='pill'>FREE RETIREMENT AUDIT</span>
+                <span class='pill'>Takes about 4 minutes</span>
+                <div class='hero-title'>Know if your retirement plan will actually last.</div>
+                <p class='hero-sub'>Project retirement accounts, Social Security, home equity, withdrawals, and then ask an AI retirement planner questions based on your numbers.</p>
+                <p><span class='pill'>✓ See if your money lasts</span><span class='pill'>✓ Test retirement ages</span><span class='pill'>✓ Compare withdrawal rates</span><span class='pill'>✓ Ask AI about your plan</span></p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with login_col:
+        if st.session_state.user_logged_in:
+            st.success(f"Logged in as {st.session_state.user_email}")
+            if st.session_state.get("_no_saved_plan"):
+                st.caption("No saved plan yet. Start the free audit below. No account needed to start a new one.")
+        else:
+            st.markdown("**Already have an account? Log in**")
+            landing_email = st.text_input("Email", key="landing_login_email")
+            landing_password = st.text_input("Password", type="password", key="landing_login_password")
+            if st.button("Log in", type="primary", use_container_width=True, key="landing_login_button"):
+                if not landing_email or not landing_password:
+                    st.error("Enter both email and password.")
+                else:
+                    response, error = sign_in_user(landing_email, landing_password)
+                    if error:
+                        st.error(login_failure_message(error))
+                    else:
+                        complete_login(response, open_saved_plan=True)
+            st.caption("No account needed to start.")
     c1, c2, c3 = st.columns([1.2, 1, 1])
     with c1:
         if st.button("Start My Free Retirement Audit", type="primary", use_container_width=True):
@@ -1528,12 +1601,35 @@ elif step == 5:
     next_back_buttons()
 
 elif step == 6:
-    section_header(6, "Withdrawal assumptions", "This estimates how long your investments may last after retirement.")
+    section_header(6, "Withdrawal assumptions", "This estimates how long your investments may last after retirement, and what income you will need.")
     c1, c2 = st.columns(2)
     with c1:
         st.slider("Annual withdrawal rate from investments %", min_value=3.0, max_value=12.0, value=4.5, step=0.1, key="wd_rate_pct", help="Lower rates are generally safer for longer retirements.")
     with c2:
         st.slider("Expected annual portfolio growth in retirement %", min_value=0.0, max_value=12.0, value=6.0, step=0.1, key="post_growth_pct", help="This is a simplified assumption.")
+    st.slider(
+        "Expected inflation %",
+        min_value=0.0,
+        max_value=6.0,
+        value=2.5,
+        step=0.1,
+        key="inflation_pct",
+        help="Grows the income you will need from today to retirement, and each year after that.",
+    )
+    household_now = float(st.session_state.get("avg_earn_sp1") or 0)
+    if includes_spouse():
+        household_now += float(st.session_state.get("avg_earn_sp2") or 0)
+    if not st.session_state.get("retirement_spending_custom"):
+        st.session_state["retirement_monthly_spend"] = round(default_monthly_spending(household_now), 2)
+    st.number_input(
+        "Expected monthly retirement spending (today's dollars)",
+        min_value=0.0,
+        step=50.0,
+        key="retirement_monthly_spend",
+        on_change=_mark_retirement_spending_custom,
+        help="Prefilled at 80% of your current household income. Change it if you know what you will spend.",
+    )
+    st.caption("Starts at 80% of current household income, a common replacement target. Edit it if you already know your spending.")
     results = calculate_results()
     st.markdown("### Quick preview")
     c3, c4, c5 = st.columns(3)
@@ -1555,7 +1651,7 @@ elif step == 7:
             """
             <div class='step-card'>
                 <h2>Enter a balance or income to see your score</h2>
-                <p class='muted'>Add at least one account balance, contribution, pension, home value, or earnings amount. With those left blank, a Retirement Score would only reflect the default withdrawal assumptions (41/100, Needs attention) and every dollar result would be $0.</p>
+                <p class='muted'>Add at least one account balance, contribution, pension, home value, or earnings amount. With those left blank, there is no livable income to compare and every dollar result would be $0.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1572,8 +1668,13 @@ elif step == 7:
     else:
         st.markdown(f"# Retirement Score: <span class='{results['score_class']}'>{results['score']} / 100</span>", unsafe_allow_html=True)
         st.markdown(f"### {results['score_label']} outlook based on the assumptions you entered")
+        if results.get("income_sentence"):
+            st.markdown(results["income_sentence"])
+        if results.get("income_next_step"):
+            st.caption(results["income_next_step"])
+        st.caption("The covered amount uses a 4% withdrawal from investments plus Social Security and pension, in retirement-year dollars. Some planners quote higher withdrawal rates. This score stays at 4% so a high score is conservative. It is not a guarantee.")
         if results["total_invest"] <= 0:
-            st.info("This score is based on invested savings and your withdrawal assumptions. Social Security, pension, and home equity are not part of the score, so with no investment balance it stays near the baseline.")
+            st.info("There is no investment balance yet, so portfolio income is $0. Social Security and any pension are still counted against a livable income.")
 
         c1, c2, c3, c4 = st.columns(4)
         with c1:
