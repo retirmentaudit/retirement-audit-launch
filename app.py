@@ -27,9 +27,11 @@ from unlock import (
     FREE_AI_QUESTION_LIMIT,
     ai_question_limit,
     fulfillment_decision,
+    login_failure_message,
     merged_question_count,
     onetime_checkout_params,
     profile_is_paid,
+    signup_needs_email_confirmation,
     user_can_ask,
 )
 
@@ -534,6 +536,8 @@ def sign_out_user():
     st.session_state.ai_chat_history = []
     st.session_state.ai_limit = FREE_AI_QUESTION_LIMIT
     st.session_state._action_plan_cache = None
+    st.session_state._pending_checkout = False
+    st.session_state._email_confirmation_needed = False
 
 def remember_auth_session(auth_response):
     """Keep the Supabase session across reruns, including the return from Checkout.
@@ -735,67 +739,102 @@ def query_value(name: str):
         return value[0] if value else None
     return value
 
-def render_auth_tabs(key_prefix: str):
-    login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
+def complete_login(response, continue_to_checkout: bool = False):
+    """Sign the browser in without clearing the audit answers already on the page."""
+    user = response.user if response is not None else None
+    if user is None:
+        st.error("Login succeeded, but no account was returned. Try again.")
+        return
+    remember_auth_session(response)
+    st.session_state.user_logged_in = True
+    st.session_state.user_email = user.email
+    st.session_state.user_id = user.id
+    st.session_state._email_confirmation_needed = False
+    ensure_user_profile(user.id, user.email)
+    refresh_paid_status()
+    if continue_to_checkout and not st.session_state.is_paid_user:
+        st.session_state._pending_checkout = True
+    st.rerun()
+
+def render_auth_tabs(key_prefix: str, signup_first: bool = False, continue_to_checkout: bool = False):
+    if signup_first:
+        signup_tab, login_tab = st.tabs(["Sign Up", "Log In"])
+    else:
+        login_tab, signup_tab = st.tabs(["Log In", "Sign Up"])
     with login_tab:
-        login_email = st.text_input("Login Email", key=f"{key_prefix}_login_email")
-        login_password = st.text_input("Login Password", type="password", key=f"{key_prefix}_login_password")
-        if st.button("Log In", use_container_width=True, key=f"{key_prefix}_login_button"):
+        login_email = st.text_input("Email", key=f"{key_prefix}_login_email")
+        login_password = st.text_input("Password", type="password", key=f"{key_prefix}_login_password")
+        if st.button("Log in", use_container_width=True, key=f"{key_prefix}_login_button"):
             if not login_email or not login_password:
-                st.error("Please enter both email and password.")
+                st.error("Enter both email and password.")
             else:
                 response, error = sign_in_user(login_email, login_password)
                 if error:
-                    st.error(f"Login failed: {error}")
+                    st.error(login_failure_message(error))
                 else:
-                    user = response.user
-                    remember_auth_session(response)
-                    st.session_state.user_logged_in = True
-                    st.session_state.user_email = user.email
-                    st.session_state.user_id = user.id
-                    ensure_user_profile(user.id, user.email)
-                    refresh_paid_status()
-                    st.rerun()
+                    complete_login(response, continue_to_checkout=continue_to_checkout)
     with signup_tab:
-        signup_email = st.text_input("Sign Up Email", key=f"{key_prefix}_signup_email")
-        signup_password = st.text_input("Create Password", type="password", key=f"{key_prefix}_signup_password")
-        if st.button("Create Account", use_container_width=True, key=f"{key_prefix}_signup_button"):
+        signup_email = st.text_input("Email", key=f"{key_prefix}_signup_email")
+        signup_password = st.text_input("Password", type="password", key=f"{key_prefix}_signup_password")
+        if st.button("Create free account", use_container_width=True, key=f"{key_prefix}_signup_button"):
             if not signup_email or not signup_password:
-                st.error("Please enter both email and password.")
+                st.error("Enter both email and password.")
             else:
                 response, error = sign_up_user(signup_email, signup_password)
                 if error:
-                    st.error(f"Sign up failed: {error}")
+                    lowered = error.lower()
+                    if "already" in lowered and "registered" in lowered:
+                        st.error("That email already has an account. Use Log in, and you'll continue to the $5 checkout.")
+                    else:
+                        st.error(f"Sign up failed: {error}")
+                elif signup_needs_email_confirmation(response):
+                    st.session_state._pending_checkout = True
+                    st.session_state._email_confirmation_needed = True
+                    st.info(
+                        "Check your email and confirm your account. Then use Log in on this form. "
+                        "You'll continue to the $5 checkout. No subscription."
+                    )
                 else:
-                    try:
-                        user = response.user
-                        if user:
-                            remember_auth_session(response)
-                            ensure_user_profile(user.id, user.email)
-                    except Exception:
-                        pass
-                    st.success("Account created. If email confirmation is enabled, confirm your email before logging in.")
+                    complete_login(response, continue_to_checkout=continue_to_checkout)
+
+def render_checkout_link(key_prefix: str, label: str):
+    if LOCAL_SANDBOX:
+        st.caption("Local demo: this button does not contact Stripe.")
+    try:
+        url = get_checkout_url()
+        if url:
+            st.link_button(label, url, type="primary", use_container_width=True, key=f"{key_prefix}_checkout")
+            return True
+        st.error("Checkout is not available yet.")
+    except Exception as e:
+        st.error(f"Checkout error: {e}")
+    return False
 
 def render_unlock_paywall(key_prefix: str):
     st.markdown(
         f"<div class='unlock-card'><h3>{UNLOCK_TITLE}</h3><p class='muted'>{UNLOCK_BODY}</p></div>",
         unsafe_allow_html=True,
     )
-    if not st.session_state.user_logged_in:
-        if st.button(UNLOCK_BUTTON, type="primary", use_container_width=True, key=f"{key_prefix}_unlock"):
-            st.session_state[f"{key_prefix}_auth_open"] = True
-        if st.session_state.get(f"{key_prefix}_auth_open"):
-            st.caption("A free account is required before checkout. No subscription.")
-            render_auth_tabs(key_prefix)
+    if st.session_state.user_logged_in and st.session_state.get("_pending_checkout") and not st.session_state.is_paid_user:
+        st.success("You're in. Continue to the $5 checkout to unlock your audit.")
+        render_checkout_link(key_prefix, "Continue to $5 checkout")
         return
-    if LOCAL_SANDBOX:
-        st.caption("Local demo: this button does not contact Stripe.")
-    try:
-        url = get_checkout_url()
-        if url:
-            st.link_button(UNLOCK_BUTTON, url, type="primary", use_container_width=True, key=f"{key_prefix}_checkout")
-    except Exception as e:
-        st.error(f"Checkout error: {e}")
+    if not st.session_state.user_logged_in:
+        auth_open = bool(st.session_state.get(f"{key_prefix}_auth_open"))
+        if not auth_open:
+            if st.button(UNLOCK_BUTTON, type="primary", use_container_width=True, key=f"{key_prefix}_unlock"):
+                st.session_state[f"{key_prefix}_auth_open"] = True
+                st.rerun()
+        if auth_open:
+            st.markdown("**Create a free account to unlock — takes 10 seconds. No subscription.**")
+            if st.session_state.get("_email_confirmation_needed"):
+                st.info(
+                    "Check your email and confirm your account. Then use Log in on this form. "
+                    "You'll continue to the $5 checkout. No subscription."
+                )
+            render_auth_tabs(key_prefix, signup_first=True, continue_to_checkout=True)
+        return
+    render_checkout_link(key_prefix, UNLOCK_BUTTON)
 
 def plan_inputs_from_state(results: dict) -> dict:
     manual_ss = bool(st.session_state.get("use_manual_ss"))
@@ -1631,14 +1670,8 @@ elif step == 7:
 
     st.markdown("---")
     st.markdown("## Save this plan")
-    if not st.session_state.user_logged_in:
-        st.markdown(
-            "<div class='upgrade-card'><h3>Create a free account</h3><p class='muted'>The audit, score, and 3 AI questions stay free without an account. A free account is what checkout uses, and the $5 unlock keeps your plan on that account.</p></div>",
-            unsafe_allow_html=True,
-        )
-        render_auth_tabs("save")
-    elif not st.session_state.is_paid_user:
-        render_unlock_paywall("save")
+    if not (st.session_state.is_paid_user and st.session_state.user_logged_in):
+        st.caption("Saving this plan is included with the $5 unlock above. No subscription.")
     else:
         scenario_name = st.text_input("Plan Name", value=st.session_state.get("scenario_name", "My Retirement Plan"), key="scenario_name")
         if st.button("Save Plan", use_container_width=True):

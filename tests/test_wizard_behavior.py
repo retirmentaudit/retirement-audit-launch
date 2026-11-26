@@ -149,6 +149,51 @@ def test_creator_footer_is_spelled_correctly_and_blank_text_rule_is_gone():
     assert 'data-testid="stToolbarActions"' in (ROOT / "app.py").read_text(encoding="utf-8")
 
 
+def test_unlock_button_opens_a_short_signup_and_keeps_the_audit():
+    at = _boot(
+        wizard_step=7,
+        planning_for="Just me",
+        spouse1_use_traditional_401k=True,
+        spouse1_trad_401k_bal=50000,
+    )
+    unlock = next(button for button in at.button if button.label == "Unlock my full audit — $5")
+    unlock.click()
+    at.run()
+    assert not at.exception, at.exception
+    text = _markdown_text(at)
+    assert "Create a free account to unlock — takes 10 seconds. No subscription." in text
+    assert "A free account is required before checkout" not in text
+    assert "Retirement Score:" in text
+    assert int(at.session_state["spouse1_trad_401k_bal"]) == 50000
+    assert int(at.session_state["wizard_step"]) == 7
+    labels = _labels(at.button)
+    assert "Create free account" in labels
+    assert "Log in" in labels
+    assert labels.index("Create free account") < labels.index("Log in")
+
+
+def test_pending_checkout_shows_one_continue_button_and_keeps_answers():
+    at = _boot(
+        wizard_step=7,
+        planning_for="Just me",
+        spouse1_use_traditional_401k=True,
+        spouse1_trad_401k_bal=50000,
+        user_logged_in=True,
+        user_id="user-1",
+        user_email="a@example.com",
+        is_paid_user=False,
+        _pending_checkout=True,
+    )
+    text = _markdown_text(at)
+    joined = text + "\n" + "\n".join(getattr(el, "value", "") or "" for el in at.success)
+    assert "Continue to the $5 checkout" in joined
+    assert "Continue to $5 checkout" in _labels(at.link_button)
+    assert "A free account is required before checkout" not in text
+    assert "Create a free account to keep going" not in text
+    assert int(at.session_state["spouse1_trad_401k_bal"]) == 50000
+    assert "Retirement Score:" in text
+
+
 def test_free_results_keep_the_score_and_show_the_one_time_unlock():
     at = _boot(
         wizard_step=7,

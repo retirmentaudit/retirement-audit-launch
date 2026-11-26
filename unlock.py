@@ -47,6 +47,41 @@ def merged_question_count(session_count, profile_count) -> int:
     return max(int(session_count or 0), int(profile_count or 0))
 
 
+def auth_session(response):
+    """The Supabase session on a sign-in or sign-up response, if one was issued."""
+    if response is None:
+        return None
+    session = getattr(response, "session", None)
+    if session is None and isinstance(response, dict):
+        session = response.get("session")
+    return session
+
+
+def auth_user(response):
+    if response is None:
+        return None
+    user = getattr(response, "user", None)
+    if user is None and isinstance(response, dict):
+        user = response.get("user")
+    return user
+
+
+def signup_needs_email_confirmation(response) -> bool:
+    """True when Supabase created the user but will not sign them in until they confirm email."""
+    return auth_user(response) is not None and not auth_session(response)
+
+
+def login_failure_message(error: str) -> str:
+    """Plain-language login error. Email confirmation gets its own instructions."""
+    text = (error or "").lower()
+    if "not confirmed" in text or "email_not_confirmed" in text:
+        return (
+            "Confirm your email first, then log in. The confirmation message is in your inbox. "
+            "After you log in, you'll continue to the $5 checkout. No subscription."
+        )
+    return f"Login failed: {error}"
+
+
 def user_can_ask(used, is_paid: bool, logged_in: bool) -> tuple[bool, str | None]:
     """Return (allowed, reason).
 
