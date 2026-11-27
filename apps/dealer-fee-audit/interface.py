@@ -474,7 +474,7 @@ def _apply_demo(ctx: Ctx):
 
 def _footer():
     st.markdown(
-        f"<p class='quiet-footer'>{SHORT_DISCLAIMER} "
+        f"<p class='quiet-footer'>{SHORT_DISCLAIMER} {LANDING_STRIP} "
         f"<a href='?page=Terms' target='_self'>Terms</a> · "
         f"<a href='?page=Privacy' target='_self'>Privacy</a> · {PUBLIC_URL}</p>",
         unsafe_allow_html=True,
