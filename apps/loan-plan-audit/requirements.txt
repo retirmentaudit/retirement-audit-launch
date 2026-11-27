@@ -1,0 +1,8 @@
+streamlit
+plotly
+pillow
+fpdf2
+supabase
+stripe
+openai
+pytest

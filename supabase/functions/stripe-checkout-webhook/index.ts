@@ -38,6 +38,11 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ received: true, ignored: "missing user" }), { status: 200 });
   }
 
+  // Loan Plan Audit writes public.unlocks. It must not flip Retirement Audit's is_paid_user.
+  if (session.metadata?.product === "loan_plan_audit") {
+    return await unlockLoanPlanAudit(userId, session);
+  }
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const existing = await fetch(
@@ -81,3 +86,40 @@ Deno.serve(async (req) => {
   }
   return new Response(JSON.stringify({ received: true, unlocked: true }), { status: 200 });
 });
+
+async function unlockLoanPlanAudit(userId: string, session: { id: string; customer?: unknown }) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+  const existing = await fetch(
+    `${supabaseUrl}/rest/v1/unlocks?user_id=eq.${encodeURIComponent(userId)}&product=eq.loan_plan_audit&select=stripe_checkout_session_id`,
+    { headers },
+  );
+  const rows = await existing.json();
+  const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  if (row && row.stripe_checkout_session_id === session.id) {
+    return new Response(JSON.stringify({ received: true, already_unlocked: true, product: "loan_plan_audit" }), {
+      status: 200,
+    });
+  }
+  const saved = await fetch(`${supabaseUrl}/rest/v1/unlocks?on_conflict=user_id,product`, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify({
+      user_id: userId,
+      product: "loan_plan_audit",
+      stripe_checkout_session_id: session.id,
+      stripe_customer_id: typeof session.customer === "string" ? session.customer : null,
+      amount_cents: 900,
+      paid_at: new Date().toISOString(),
+    }),
+  });
+  if (!saved.ok) {
+    return new Response("Unlock update failed", { status: 500 });
+  }
+  return new Response(JSON.stringify({ received: true, unlocked: true, product: "loan_plan_audit" }), { status: 200 });
+}
