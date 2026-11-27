@@ -18,3 +18,5 @@ Environment variables on the function (names only; do not commit the values):
 Point the Stripe endpoint at `checkout.session.completed` only. The sample ignores every other event, and it ignores sessions that are not `mode=payment` with `payment_status=paid`.
 
 The sample updates `user_profiles` by `user_id` (`client_reference_id`, then `metadata.user_id`). It sets `is_paid_user`, `paid_via = one_time`, and `stripe_checkout_session_id`. Run `supabase/migrations/20261126_one_time_unlock.sql` first.
+
+If `metadata.product` is `loan_plan_audit`, the sample does **not** change `user_profiles`. It upserts `public.unlocks` for that user and product instead. Run `supabase/migrations/20261127_loan_plan_audit.sql` before relying on that branch. A Loan Plan Audit payment must not mark a Retirement Audit profile as paid.

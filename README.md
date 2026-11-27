@@ -110,3 +110,7 @@ Do not set `RETIREMENT_AUDIT_LOCAL_DEMO` on Streamlit Cloud. It is ignored when 
 ```bash
 RETIREMENT_AUDIT_LOCAL_DEMO=1 python -m pytest tests
 ```
+
+## Loan Plan Audit
+
+Sister calculator in [`apps/loan-plan-audit/`](apps/loan-plan-audit/). Its Streamlit entry is `apps/loan-plan-audit/app.py`. Secrets, the $9 price id (`STRIPE_PRICE_ID_LOANAUDIT`), and the `loan_scenarios` / `unlocks` migration are documented in that folder's README. It does not read `STRIPE_PRICE_ID_ONETIME` and it does not change Retirement Audit profiles.
