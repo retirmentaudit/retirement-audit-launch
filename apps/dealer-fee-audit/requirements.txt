@@ -1,0 +1,6 @@
+streamlit
+plotly
+fpdf2
+supabase
+stripe
+pytest
