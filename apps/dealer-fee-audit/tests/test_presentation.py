@@ -35,7 +35,9 @@ def test_footer_and_results_screens_render_disclaimers():
     footer = INTERFACE[INTERFACE.index("def _footer"):INTERFACE.index("def _rules")]
     assert "SHORT_DISCLAIMER" in footer
     results = INTERFACE[INTERFACE.index("def _results"):INTERFACE.index("def _paid_report")]
-    assert "RESULTS_DISCLAIMER" in results
+    assert "_full_disclaimer()" in results
+    fuller = INTERFACE[INTERFACE.index("def _full_disclaimer"):INTERFACE.index("def _sidebar")]
+    assert "RESULTS_DISCLAIMER" in fuller
     assert "CHECKOUT_DISCLAIMER" in INTERFACE[INTERFACE.index("def _checkout_panel"):INTERFACE.index("def _results")]
     assert "SCRIPT_DISCLAIMER" in INTERFACE[INTERFACE.index("def _paid_report"):INTERFACE.index("def _save_panel")]
     run = INTERFACE[INTERFACE.index("def run("):]

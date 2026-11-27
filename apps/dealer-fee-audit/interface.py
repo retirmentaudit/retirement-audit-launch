@@ -31,6 +31,7 @@ from copy_text import (
     METHOD_PARAGRAPHS,
     PRICE_DOLLARS,
     QUESTIONS_TO_ASK,
+    QUIET_LINE,
     RESULTS_DISCLAIMER,
     RULES_BANNER,
     SCRIPT_DISCLAIMER,
@@ -472,12 +473,21 @@ def _apply_demo(ctx: Ctx):
 # ---------- screens ----------
 
 def _footer():
-    st.markdown(f"<div class='fine-print'>{SHORT_DISCLAIMER}</div>", unsafe_allow_html=True)
-    st.caption(f"Dealer Fee Check · independent software · not a dealer, broker, or lender · {PUBLIC_URL}")
+    st.markdown(
+        f"<p class='quiet-footer'>{SHORT_DISCLAIMER} "
+        f"<a href='?page=Terms' target='_self'>Terms</a> · "
+        f"<a href='?page=Privacy' target='_self'>Privacy</a> · {PUBLIC_URL}</p>",
+        unsafe_allow_html=True,
+    )
 
 
 def _rules():
-    st.markdown(f"<div class='rules'>{RULES_BANNER}</div>", unsafe_allow_html=True)
+    st.caption(RULES_BANNER)
+
+
+def _full_disclaimer():
+    with st.expander("Disclaimer", expanded=False):
+        st.markdown(RESULTS_DISCLAIMER)
 
 
 def _sidebar(ctx: Ctx):
@@ -524,7 +534,7 @@ def _landing():
         f"<p class='alt-tag'>{ALT_TAGLINE}</p><ul>{bullets}</ul></div>",
         unsafe_allow_html=True,
     )
-    st.markdown(f"<div class='strip'>{LANDING_STRIP}</div>", unsafe_allow_html=True)
+    st.markdown(f"<p class='quiet-line'>{QUIET_LINE}</p>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     if col1.button(CTA, type="primary"):
         st.session_state.show_results = False
@@ -636,7 +646,7 @@ def _category_chart(audit):
 
 
 def _checkout_panel(ctx: Ctx, state: str):
-    st.markdown(f"<div class='disclaimer'>{CHECKOUT_DISCLAIMER}</div>", unsafe_allow_html=True)
+    st.caption(CHECKOUT_DISCLAIMER)
     st.checkbox(TERMS_CHECKBOX, key="agreed_terms")
     st.caption("Read the Terms (in the menu) before checking the box. Checkout stays closed until it's checked.")
     if not ctx.price_id:
@@ -646,7 +656,7 @@ def _checkout_panel(ctx: Ctx, state: str):
         st.error(UNLOCK_TOKEN_SETUP_ERROR)
         return
     if not st.session_state.get("agreed_terms"):
-        st.info("Check the box to agree to the Terms before checkout.")
+        st.caption("Check the box to agree to the Terms before checkout.")
         return
     if not st.session_state.get("user_logged_in"):
         st.markdown("**Create an account or log in so the report stays unlocked. No subscription.**")
@@ -676,8 +686,10 @@ def _results(ctx: Ctx):
             st.rerun()
         return
     unlocked = unlock_is_active(st.session_state.get("unlock_row"))
-    _rules()
     st.markdown(f"## {html.escape(quote.vehicle or 'Your quote')} · {STATE_NAMES.get(audit.state, audit.state)}")
+    st.markdown(f"<p class='quiet-line'>{QUIET_LINE}</p>", unsafe_allow_html=True)
+    _rules()
+    _full_disclaimer()
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='card'>Out-the-door total<p class='big'>{_money(audit.out_the_door)}</p>"
                 "<small>as entered, after trade-in</small></div>", unsafe_allow_html=True)
@@ -719,7 +731,6 @@ def _results(ctx: Ctx):
         with st.expander(UNLOCK_BUTTON, expanded=bool(st.session_state.get("agreed_terms"))):
             _checkout_panel(ctx, audit.state or "")
     _save_panel(ctx, quote, audit)
-    st.markdown(f"<div class='disclaimer'>{RESULTS_DISCLAIMER}</div>", unsafe_allow_html=True)
     if st.button("Edit quote"):
         st.session_state.show_results = False
         st.rerun()
@@ -843,20 +854,14 @@ def _method():
     st.markdown("### Sources")
     for label, url in SOURCES:
         st.markdown(f"- [{label}]({url})")
-    st.markdown(f"<div class='disclaimer'>{RESULTS_DISCLAIMER}</div>", unsafe_allow_html=True)
+    _full_disclaimer()
 
 
 def _disclaimer_page():
     st.markdown("## Disclaimer")
-    for title, text in (
-        ("Every page", LANDING_STRIP),
-        ("Footer", SHORT_DISCLAIMER),
-        ("Results", RESULTS_DISCLAIMER),
-        ("Checkout", CHECKOUT_DISCLAIMER),
-        ("Message template", SCRIPT_DISCLAIMER),
-    ):
-        st.markdown(f"**{title}**")
-        st.markdown(f"<div class='disclaimer'>{text}</div>", unsafe_allow_html=True)
+    st.caption(QUIET_LINE)
+    for text in (SHORT_DISCLAIMER, LANDING_STRIP, RESULTS_DISCLAIMER, CHECKOUT_DISCLAIMER, SCRIPT_DISCLAIMER):
+        st.markdown(text)
 
 
 def run(ctx: Ctx):
@@ -864,6 +869,13 @@ def run(ctx: Ctx):
     _init()
     _apply_demo(ctx)
     _consume_nav()
+    requested = query_param(st.query_params, "page")
+    if requested in NAV_ITEMS:
+        st.session_state.nav = requested
+        try:
+            del st.query_params["page"]
+        except Exception:
+            pass
     _restore(ctx)
     if st.session_state.pop("_reload_unlock", False):
         _load_unlock(ctx)
