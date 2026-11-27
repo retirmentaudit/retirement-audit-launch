@@ -12,7 +12,9 @@ from charts import comparison_chart, monthly_bar, payoff_timeline
 from checkout import (
     PRICE_SETUP_ERROR,
     PRODUCT,
+    UNLOCK_TOKEN_SETUP_ERROR,
     checkout_block_reason,
+    commit_unlock,
     fulfillment_decision,
     onetime_checkout_params,
 )
@@ -111,6 +113,7 @@ class Ctx:
     app_url: str
     local_sandbox: bool
     openai_client: object | None
+    unlock_token: str | None = None
 
 
 def _ensure(key, value):
@@ -330,19 +333,62 @@ def _load_unlock(ctx: Ctx):
         st.session_state.unlock_row = st.session_state.get("unlock_row")
 
 
-def _save_unlock(ctx: Ctx, update: dict):
+def _visible_unlock_rows(ctx: Ctx) -> list[dict]:
+    user_id = st.session_state.get("user_id")
+    if not user_id:
+        return []
     try:
-        existing = (
-            ctx.supabase.table("unlocks").select("id").eq("user_id", update["user_id"]).eq("product", PRODUCT).execute()
-        )
-        if existing.data:
-            ctx.supabase.table("unlocks").update(update).eq("user_id", update["user_id"]).eq("product", PRODUCT).execute()
-        else:
-            ctx.supabase.table("unlocks").insert(update).execute()
-    except Exception as exc:
-        st.error(f"The payment was confirmed, but the unlock could not be saved: {exc}")
-        return
-    st.session_state.unlock_row = update
+        result = ctx.supabase.table("unlocks").select("*").eq("user_id", user_id).eq("product", PRODUCT).execute()
+        return list(result.data or [])
+    except Exception:
+        return []
+
+
+def _save_unlock(ctx: Ctx, session, update: dict):
+    """Record an unlock only after Stripe and the recording token both pass.
+
+    Production calls record_loan_unlock. That function ignores any user id the
+    client sends and writes auth.uid(). The anon key cannot insert into unlocks.
+    """
+    if not ctx.unlock_token:
+        st.error(UNLOCK_TOKEN_SETUP_ERROR)
+        return "rejected"
+    decision = commit_unlock(
+        session=session,
+        user_id=st.session_state.get("user_id"),
+        email=st.session_state.get("user_email"),
+        existing_rows=_visible_unlock_rows(ctx),
+        now_iso=update.get("paid_at") or _now(),
+        expected_price_id=ctx.price_id,
+        token=ctx.unlock_token,
+        configured_token=ctx.unlock_token,
+    )
+    if not decision["recorded"]:
+        if decision["reason"] == "already_unlocked":
+            _load_unlock(ctx)
+            return "already_unlocked"
+        st.error("That checkout could not be applied to this account.")
+        return "rejected"
+    if ctx.local_sandbox:
+        try:
+            ctx.supabase.table("unlocks").insert(decision["update"]).execute()
+        except Exception as exc:
+            st.error(f"The payment was confirmed, but the unlock could not be saved: {exc}")
+            return "rejected"
+        st.session_state.unlock_row = decision["update"]
+        return "recorded"
+    try:
+        ctx.supabase.rpc(
+            "record_loan_unlock",
+            {"p_session_id": decision["update"]["stripe_checkout_session_id"], "p_token": ctx.unlock_token},
+        ).execute()
+    except Exception:
+        st.error("That checkout could not be applied to this account.")
+        return "rejected"
+    _load_unlock(ctx)
+    if not st.session_state.get("unlock_row"):
+        st.session_state.unlock_row = decision["update"]
+    return "recorded"
 
 
 def _complete_login(response):
@@ -475,7 +521,7 @@ def _handle_checkout_return(ctx: Ctx):
         if ctx.local_sandbox:
             session = demo_retrieved_session(session_id, st.session_state.user_id, st.session_state.user_email)
         else:
-            session = ctx.stripe.checkout.Session.retrieve(session_id)
+            session = ctx.stripe.checkout.Session.retrieve(session_id, expand=["line_items"])
     except Exception as exc:
         st.error(f"Checkout could not be confirmed: {exc}")
         return
@@ -488,8 +534,11 @@ def _handle_checkout_return(ctx: Ctx):
         ctx.price_id,
     )
     if decision["reason"] == "unlocked" and decision["update"]:
-        _save_unlock(ctx, decision["update"])
-        st.success("The full report is unlocked on this account.")
+        outcome = _save_unlock(ctx, session, decision["update"])
+        if outcome == "recorded":
+            st.success("The full report is unlocked on this account.")
+        elif outcome == "already_unlocked":
+            st.success("This payment was already applied.")
     elif decision["reason"] == "already_unlocked":
         st.success("This payment was already applied.")
     else:
@@ -591,7 +640,10 @@ def _delete_my_data(ctx: Ctx):
         return
     try:
         ctx.supabase.table("loan_scenarios").delete().eq("user_id", user_id).execute()
-        ctx.supabase.table("unlocks").delete().eq("user_id", user_id).eq("product", PRODUCT).execute()
+        if ctx.local_sandbox:
+            ctx.supabase.table("unlocks").delete().eq("user_id", user_id).eq("product", PRODUCT).execute()
+        else:
+            ctx.supabase.rpc("delete_my_loan_unlock", {}).execute()
     except Exception as exc:
         st.error(f"Could not delete saved rows: {exc}")
         return
@@ -913,6 +965,9 @@ def _checkout_panel(ctx: Ctx, state: str):
     if not ctx.price_id:
         st.error(PRICE_SETUP_ERROR)
         return
+    if not ctx.local_sandbox and not ctx.unlock_token:
+        st.error(UNLOCK_TOKEN_SETUP_ERROR)
+        return
     if not st.session_state.get("agreed_terms"):
         st.info("Check the box to agree to the Terms before checkout.")
         return
@@ -1191,6 +1246,8 @@ def run(ctx: Ctx):
         st.success(st.session_state.pop("_delete_note"))
     if not ctx.price_id:
         st.error(PRICE_SETUP_ERROR)
+    if not ctx.local_sandbox and not ctx.unlock_token:
+        st.error(UNLOCK_TOKEN_SETUP_ERROR)
     _handle_checkout_return(ctx)
     _sidebar(ctx)
     page = st.session_state.get("nav") or "Home"
