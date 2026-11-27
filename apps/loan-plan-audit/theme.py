@@ -48,23 +48,37 @@ label, .stRadio label, .stCheckbox label {
 }
 .tagline { font-size: 1.35rem; margin: 0 0 8px 0; }
 .alt-tag { color: #2BD9A0 !important; -webkit-text-fill-color: #2BD9A0 !important; font-weight: 600; }
-.strip, .disclaimer, .fine-print {
-  background: #ffffff;
-  border: 1px solid #E4DFD4;
-  border-left: 6px solid #FF6B5A;
-  border-radius: 14px;
-  padding: 14px 16px;
-  color: #0B1F3A !important;
-  -webkit-text-fill-color: #0B1F3A !important;
-  font-size: 0.95rem;
+[data-testid="stMarkdownContainer"] p.quiet-line,
+[data-testid="stMarkdownContainer"] .quiet-line {
+  color: #6b7280 !important;
+  -webkit-text-fill-color: #6b7280 !important;
+  font-size: 0.9rem;
+  font-weight: 400;
+  margin: 2px 0 14px 0;
+}
+[data-testid="stMarkdownContainer"] p.quiet-footer,
+[data-testid="stMarkdownContainer"] .quiet-footer,
+[data-testid="stMarkdownContainer"] .quiet-footer a,
+.fine-print, .strip, .disclaimer {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 2px 0 !important;
+  margin: 4px 0 0 0;
+  color: #6b7280 !important;
+  -webkit-text-fill-color: #6b7280 !important;
+  font-size: 0.78rem !important;
   line-height: 1.45;
+  font-weight: 400;
 }
 .rules {
-  background: #E7FBF4;
-  border: 1px solid #2BD9A0;
-  border-radius: 14px;
-  padding: 12px 16px;
-  margin: 8px 0 14px 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0 0 8px 0;
+  color: #6b7280 !important;
+  -webkit-text-fill-color: #6b7280 !important;
+  font-size: 0.8rem;
 }
 .card {
   background: #ffffff;

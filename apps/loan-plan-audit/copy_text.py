@@ -35,6 +35,7 @@ AI_LINE = "General info only. I can't tell you which plan to choose."
 LOWEST_TOTAL_CAPTION = "Lowest estimated total cost in this scenario"
 
 HEADLINE = "Student Loan Plan Picker"
+QUIET_LINE = "Educational estimates only, not financial or legal advice."
 BRAND_KICKER = "STUDENT LOAN PLAN PICKER"
 PUBLIC_URL = "https://loanplanaudit.streamlit.app"
 TAGLINE = "RAP, IBR or Standard? See every plan's real math in 60 seconds."
