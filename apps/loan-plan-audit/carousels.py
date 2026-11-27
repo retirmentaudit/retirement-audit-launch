@@ -7,7 +7,7 @@ from io import BytesIO
 
 from PIL import Image, ImageDraw
 
-from copy_text import SHORT_DISCLAIMER
+from copy_text import BRAND_KICKER, PUBLIC_URL, SHORT_DISCLAIMER
 from engine import PLAN_IBR15, PLAN_RAP, PLAN_STANDARD, LoanInput, build_audit, make_scenario
 from share_card import _font, _wrap
 
@@ -24,7 +24,7 @@ class Slide:
 
 
 def _disclaimer() -> Slide:
-    return Slide("disclaimer", "Estimate. Not advice.", SHORT_DISCLAIMER + " loanplanaudit.com")
+    return Slide("disclaimer", "Estimate. Not advice.", SHORT_DISCLAIMER + " " + PUBLIC_URL)
 
 
 def _money(amount: float) -> str:
@@ -39,7 +39,7 @@ def save_deck() -> list[Slide]:
         Slide("studentaid.gov", "What ended, and when", "A court settlement ended SAVE in March 2026. Source: studentaid.gov."),
         Slide("studentaid.gov", "Notices", "Servicers have been sending notices since July 1, 2026. Read the date on yours. Source: studentaid.gov."),
         Slide("studentaid.gov", "If you do not choose", "Public descriptions say placement can be a Standard plan. Source: studentaid.gov."),
-        Slide("hypothetical", "See your numbers free", "Compare RAP, IBR, and Standard with the loans you enter. loanplanaudit.com"),
+        Slide("hypothetical", "See your numbers free", "Compare RAP, IBR, and Standard with the loans you enter. " + PUBLIC_URL),
         _disclaimer(),
     ]
 
@@ -87,7 +87,7 @@ def salary_deck() -> list[Slide]:
         Slide("hypothetical", "Same $60,000 income, 3 plans", "Hypothetical example. Not a real person. Labeled so it is not mistaken for a result."),
         Slide("studentaid.gov", "Monthly estimates", monthly + " Rules described at studentaid.gov."),
         Slide("hypothetical", "Estimated total paid", totals),
-        Slide("hypothetical", "Run yours", ends + " See your own numbers free at loanplanaudit.com."),
+        Slide("hypothetical", "Run yours", ends + " See your own numbers free at " + PUBLIC_URL + "."),
         _disclaimer(),
     ]
 
@@ -107,7 +107,7 @@ def tax_deck() -> list[Slide]:
         Slide("studentaid.gov", "Tax on a 2026 discharge", "IDR and RAP discharges on or after January 1, 2026 are federally taxable. Source: studentaid.gov."),
         Slide("studentaid.gov", "PSLF is different", "A PSLF discharge is not federally taxable. Source: studentaid.gov."),
         Slide("hypothetical", "States vary", "Hypothetical note, not tax advice. State treatment varies, including in states with no income tax. Confirm with a tax professional."),
-        Slide("hypothetical", "See the estimate", "The full report shows an estimated tax at the rate you enter. loanplanaudit.com"),
+        Slide("hypothetical", "See the estimate", "The full report shows an estimated tax at the rate you enter. " + PUBLIC_URL),
         _disclaimer(),
     ]
 
@@ -129,7 +129,7 @@ def render_slide(slide: Slide) -> Image.Image:
     kicker = _font("Inter-SemiBold.ttf", 28)
     title = _font("SpaceGrotesk-Bold.ttf", 72)
     body = _font("Inter-Regular.ttf", 36 if slide.kicker != "disclaimer" else 28)
-    draw.text((72, 80), "LOAN PLAN AUDIT", font=kicker, fill=MINT)
+    draw.text((72, 80), BRAND_KICKER, font=kicker, fill=MINT)
     draw.text((72, 130), slide.kicker.upper(), font=kicker, fill="#8FA0B8")
     y = 200
     for line in _wrap(draw, slide.title, title, 936):
@@ -140,7 +140,7 @@ def render_slide(slide: Slide) -> Image.Image:
     for line in _wrap(draw, slide.body, font, 936):
         draw.text((72, y), line, font=font, fill=PAPER)
         y += 48
-    draw.text((72, 1260), "Estimate. Not advice.  ·  loanplanaudit.com", font=_font("Inter-Regular.ttf", 24), fill=MINT)
+    draw.text((72, 1260), "Estimate. Not advice.  ·  " + PUBLIC_URL, font=_font("Inter-Regular.ttf", 24), fill=MINT)
     return image
 
 

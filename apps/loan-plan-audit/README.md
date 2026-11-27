@@ -1,4 +1,4 @@
-# Loan Plan Audit
+# Student Loan Plan Picker
 
 An independent calculator that compares estimated payments under RAP, IBR, and Standard. It does not enroll anyone in a plan, contact a servicer, or recommend a plan.
 
@@ -31,7 +31,7 @@ streamlit run apps/loan-plan-audit/app.py
 
 Do not commit secret values. This app does **not** create Stripe products or prices. Create them in the Stripe Dashboard, then paste the Price ID.
 
-1. In Stripe, create a one-time Price for **$9** (not a recurring price) on a product such as "Loan Plan Audit — Full Report". Copy the Price ID (`price_...`).
+1. In Stripe, create a one-time Price for **$9** (not a recurring price) on a product such as "Student Loan Plan Picker — Full Report". Copy the Price ID (`price_...`).
 2. In the Streamlit app's secrets, set `STRIPE_PRICE_ID_LOANAUDIT` to that Price ID. If it is missing, the free calculator still runs and Checkout shows a setup error. The app will not call Stripe to create a product or a price.
 3. In the Supabase SQL editor, run [`supabase/migrations/20261127_loan_plan_audit.sql`](../../supabase/migrations/20261127_loan_plan_audit.sql) if it is not already applied. Then run [`supabase/migrations/20261128_loan_unlock_server_write.sql`](../../supabase/migrations/20261128_loan_unlock_server_write.sql). The second file drops user writes on `unlocks`. A signed-in user can still read their own row. Inserts go through `record_loan_unlock`, which writes only for `auth.uid()` and only when the recording token matches. It does not change Retirement Audit's `user_profiles` or `scenarios` tables.
 4. Choose a long random string (at least 16 characters). Put that exact string in the Streamlit secret `UNLOCK_RECORD_TOKEN`. In the Supabase SQL editor, store only its SHA-256 digest. Do not commit the string:

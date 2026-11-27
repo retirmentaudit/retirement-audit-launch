@@ -1,4 +1,4 @@
-# Privacy Policy — Loan Plan Audit (DRAFT — attorney review required)
+# Privacy Policy — Student Loan Plan Picker (DRAFT — attorney review required)
 Last updated: [DATE] · [LEGAL ENTITY NAME, LLC] · [CONTACT EMAIL]
 
 **Summary:** We collect the minimum needed to run your calculations and save your scenarios. We never ask for your SSN, FSA ID, or loan account logins. We don't sell or share your personal information.

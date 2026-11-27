@@ -69,7 +69,7 @@ def test_share_card_hides_balances_and_income_by_default():
     assert "40,000" in shown
     assert "53,000" in shown
     assert "221" in hidden
-    assert "loanplanaudit.com" in hidden
+    assert "https://loanplanaudit.streamlit.app" in hidden
     assert "Estimate. Not advice." in hidden
     assert SHORT_DISCLAIMER in hidden
     image = Image.open(io.BytesIO(render_share_card(audit, plans, show_private=False)))
@@ -98,7 +98,7 @@ def test_sample_posts_end_on_the_disclaimer_and_cite_studentaid():
         assert "studentaid.gov" in text.lower()
         assert slides[-1].kicker == "disclaimer"
         assert "Educational estimates only" in slides[-1].body
-        assert "loanplanaudit.com" in slides[-1].body
+        assert "https://loanplanaudit.streamlit.app" in slides[-1].body
         assert render_slide(slides[-1]).size == (1080, 1350)
     salary = dict(decks)["same-salary-three-plans"]
     assert "Hypothetical example" in salary[0].body
