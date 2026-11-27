@@ -9,6 +9,7 @@ from fees import RULES_DATE
 from checkout import PRICE_DOLLARS  # single source of truth
 
 HEADLINE = "Dealer Fee Check"
+QUIET_LINE = "Educational information only, not legal or financial advice."
 PUBLIC_URL = "https://dealerfeecheck.streamlit.app"
 TAGLINE = "Paste your dealer's out-the-door quote. See every fee explained in 60 seconds."
 ALT_TAGLINE = "Know which charges are required, which are optional, and which look high."

@@ -32,6 +32,8 @@ from copy_text import (
     LOWEST_TOTAL_CAPTION,
     METHOD_PARAGRAPHS,
     METHOD_UNCERTAIN,
+    PUBLIC_URL,
+    QUIET_LINE,
     RESULTS_DISCLAIMER,
     RULES_BANNER,
     SAVE_CHECKLIST,
@@ -272,12 +274,22 @@ def _apply_what_if(scenario: ScenarioInput) -> ScenarioInput:
 
 
 def _footer():
-    st.markdown(f"<div class='fine-print'>{SHORT_DISCLAIMER}</div>", unsafe_allow_html=True)
-    st.caption("Student Loan Plan Picker · an independent calculator · https://loanplanaudit.streamlit.app")
+    st.markdown(
+        f"<p class='quiet-footer'>{SHORT_DISCLAIMER} "
+        f"<a href='?page=Terms' target='_self'>Terms</a> · "
+        f"<a href='?page=Privacy' target='_self'>Privacy</a> · {PUBLIC_URL}</p>",
+        unsafe_allow_html=True,
+    )
 
 
 def _rules():
-    st.markdown(f"<div class='rules'>{RULES_BANNER}</div>", unsafe_allow_html=True)
+    st.caption(RULES_BANNER)
+
+
+def _full_disclaimer():
+    with st.expander("Disclaimer", expanded=False):
+        st.markdown(RESULTS_DISCLAIMER)
+        st.markdown(LANDING_STRIP)
 
 
 def _auth_user(response):
@@ -663,7 +675,7 @@ def _landing():
         f"<ul>{bullets}</ul></div>",
         unsafe_allow_html=True,
     )
-    st.markdown(f"<div class='strip'>{LANDING_STRIP}</div>", unsafe_allow_html=True)
+    st.markdown(f"<p class='quiet-line'>{QUIET_LINE}</p>", unsafe_allow_html=True)
     if st.button(CTA, type="primary"):
         st.session_state.show_results = False
         st.session_state.wizard_step = 1
@@ -959,7 +971,7 @@ def _what_if(scenario: ScenarioInput):
 
 
 def _checkout_panel(ctx: Ctx, state: str):
-    st.markdown(f"<div class='disclaimer'>{CHECKOUT_DISCLAIMER}</div>", unsafe_allow_html=True)
+    st.caption(CHECKOUT_DISCLAIMER)
     st.checkbox(TERMS_CHECKBOX, key="agreed_terms")
     st.caption("Read the Terms before checking the box. Checkout stays closed until the box is checked.")
     if not ctx.price_id:
@@ -969,7 +981,7 @@ def _checkout_panel(ctx: Ctx, state: str):
         st.error(UNLOCK_TOKEN_SETUP_ERROR)
         return
     if not st.session_state.get("agreed_terms"):
-        st.info("Check the box to agree to the Terms before checkout.")
+        st.caption("Check the box to agree to the Terms before checkout.")
         return
     if not st.session_state.get("user_logged_in"):
         st.markdown("**Create an account or log in. The free comparison stays on this page. No subscription.**")
@@ -1034,8 +1046,9 @@ def _render_world(ctx: Ctx, audit, plans, scenario: ScenarioInput, unlocked: boo
 
 
 def _results(ctx: Ctx):
+    st.markdown(f"<p class='quiet-line'>{QUIET_LINE}</p>", unsafe_allow_html=True)
     _rules()
-    st.markdown(f"<div class='disclaimer'>{RESULTS_DISCLAIMER}</div>", unsafe_allow_html=True)
+    _full_disclaimer()
     if st.button("Edit inputs"):
         st.session_state.show_results = False
         st.rerun()
@@ -1151,20 +1164,17 @@ def _method():
     st.markdown("### Sources")
     for label, url in SOURCES:
         st.markdown(f"- [{label}]({url})")
-    st.markdown(f"<div class='disclaimer'>{RESULTS_DISCLAIMER}</div>", unsafe_allow_html=True)
+    _full_disclaimer()
 
 
 def _disclaimer_page():
     st.markdown("## Disclaimer")
-    st.markdown("**Landing**")
-    st.markdown(f"<div class='strip'>{LANDING_STRIP}</div>", unsafe_allow_html=True)
-    st.markdown("**Short**")
-    st.markdown(f"<div class='disclaimer'>{SHORT_DISCLAIMER}</div>", unsafe_allow_html=True)
-    st.markdown("**Results**")
-    st.markdown(f"<div class='disclaimer'>{RESULTS_DISCLAIMER}</div>", unsafe_allow_html=True)
-    st.markdown("**Checkout**")
-    st.markdown(f"<div class='disclaimer'>{CHECKOUT_DISCLAIMER}</div>", unsafe_allow_html=True)
-    st.markdown(f"**Question box:** {AI_LINE}")
+    st.caption(QUIET_LINE)
+    st.markdown(SHORT_DISCLAIMER)
+    st.markdown(LANDING_STRIP)
+    st.markdown(RESULTS_DISCLAIMER)
+    st.markdown(CHECKOUT_DISCLAIMER)
+    st.caption(AI_LINE)
 
 
 def _ask(ctx: Ctx):
@@ -1195,7 +1205,6 @@ def _ask(ctx: Ctx):
                 if AI_LINE not in answer:
                     answer = f"{answer}\n\n{AI_LINE}"
                 st.write(answer)
-    st.markdown(f"<div class='fine-print'>{SHORT_DISCLAIMER}</div>", unsafe_allow_html=True)
 
 
 def _scrub(text: str) -> str:
@@ -1239,6 +1248,13 @@ def run(ctx: Ctx):
     _init()
     _apply_demo(ctx)
     _consume_nav()
+    requested = query_param(st.query_params, "page")
+    if requested in NAV_ITEMS:
+        st.session_state.nav = requested
+        try:
+            del st.query_params["page"]
+        except Exception:
+            pass
     _restore(ctx)
     if st.session_state.pop("_reload_unlock", False):
         _load_unlock(ctx)

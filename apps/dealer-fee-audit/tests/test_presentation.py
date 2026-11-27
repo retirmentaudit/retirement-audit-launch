@@ -35,7 +35,9 @@ def test_footer_and_results_screens_render_disclaimers():
     footer = INTERFACE[INTERFACE.index("def _footer"):INTERFACE.index("def _rules")]
     assert "SHORT_DISCLAIMER" in footer
     results = INTERFACE[INTERFACE.index("def _results"):INTERFACE.index("def _paid_report")]
-    assert "RESULTS_DISCLAIMER" in results
+    assert "_full_disclaimer()" in results
+    fuller = INTERFACE[INTERFACE.index("def _full_disclaimer"):INTERFACE.index("def _sidebar")]
+    assert "RESULTS_DISCLAIMER" in fuller
     assert "CHECKOUT_DISCLAIMER" in INTERFACE[INTERFACE.index("def _checkout_panel"):INTERFACE.index("def _results")]
     assert "SCRIPT_DISCLAIMER" in INTERFACE[INTERFACE.index("def _paid_report"):INTERFACE.index("def _save_panel")]
     run = INTERFACE[INTERFACE.index("def run("):]
@@ -85,8 +87,8 @@ def test_app_landing_renders_with_disclaimer(demo_env):
     assert not at.exception
     text = _all_markdown(at)
     assert "Dealer Fee Check" in text
-    assert "Not legal, financial, or tax advice" in text
-    assert "not legal, financial, or tax advice" in text  # footer
+    assert "not legal, financial, or tax advice" in text
+    assert "not affiliated with any dealer, manufacturer, or government agency" in text
 
 
 def test_app_free_results_show_preview_and_paywall(demo_env):

@@ -170,6 +170,23 @@ st.markdown(
     [data-testid="stMarkdownContainer"] .yellow { color: #fbbf24 !important; }
     [data-testid="stMarkdownContainer"] .red { color: #fb7185 !important; }
     [data-testid="stMarkdownContainer"] .small-note { font-size: .9rem; color: #d5deea !important; }
+    [data-testid="stMarkdownContainer"] .quiet-line,
+    [data-testid="stMarkdownContainer"] .quiet-line * {
+        color: #9aa6b8 !important;
+        -webkit-text-fill-color: #9aa6b8 !important;
+        font-size: 0.9rem;
+        font-weight: 400;
+        margin: 8px 0 4px 0;
+    }
+    [data-testid="stMarkdownContainer"] .quiet-footer,
+    [data-testid="stMarkdownContainer"] .quiet-footer * {
+        color: #8b97a8 !important;
+        -webkit-text-fill-color: #8b97a8 !important;
+        font-size: 0.78rem;
+        line-height: 1.45;
+        font-weight: 400;
+        margin-top: 8px;
+    }
     div.stButton > button, div.stLinkButton > a {
         border-radius: 12px !important; font-weight: 700 !important; min-height: 46px;
     }
@@ -1659,6 +1676,10 @@ if not st.session_state.started:
             """,
             unsafe_allow_html=True,
         )
+        st.markdown(
+            "<p class='quiet-line'>Educational estimates only, not financial or legal advice.</p>",
+            unsafe_allow_html=True,
+        )
     with login_col:
         if st.session_state.user_logged_in:
             st.success(f"Logged in as {st.session_state.user_email}")
@@ -1698,6 +1719,12 @@ if not st.session_state.started:
         st.markdown("<div class='summary-card'><h3>Money Lasts Estimate</h3><p class='muted'>See whether your projected investments last through retirement.</p></div>", unsafe_allow_html=True)
     with cols[2]:
         st.markdown("<div class='summary-card'><h3>AI Planner</h3><p class='muted'>Ask questions like: Can I retire at 60? Is 4% safe? What should I change?</p></div>", unsafe_allow_html=True)
+    st.markdown(
+        "<p class='quiet-footer'>This tool is for educational and informational purposes only and does not constitute "
+        "financial, investment, tax, or legal advice. Projections are estimates based on what you enter. "
+        "Consult a qualified professional before acting.</p>",
+        unsafe_allow_html=True,
+    )
     render_creator_footer()
     st.stop()
 
@@ -2057,25 +2084,26 @@ elif step == 7:
 # ==========================================================
 # IMPORTANT INFO
 # ==========================================================
-st.markdown("---")
-with st.expander("Important disclaimer", expanded=False):
+st.markdown(
+    "<p class='quiet-line'>Educational estimates only, not financial or legal advice.</p>",
+    unsafe_allow_html=True,
+)
+st.markdown(
+    "<p class='quiet-footer'>This tool is for educational and informational purposes only and does not constitute "
+    "financial, investment, tax, or legal advice. Projections are estimates based on what you enter. "
+    "Consult a qualified professional before acting.</p>",
+    unsafe_allow_html=True,
+)
+with st.expander("Disclaimer", expanded=False):
     st.markdown("""
 This tool is provided for educational and informational purposes only and does not constitute financial, investment, tax, or legal advice.
 
 All projections and estimates are based on user inputs and assumptions that may not reflect real-world outcomes. Actual results will vary based on market conditions, individual circumstances, taxes, inflation, and other factors.
 
 You should consult a qualified financial professional before making important financial decisions.
-""")
-with st.expander("Privacy notice", expanded=False):
-    st.markdown("""
-We do not ask for or store highly sensitive personal financial information such as account numbers or Social Security numbers in this calculator.
 
-Any information entered into this tool is used to generate estimates and projections based on the values you provide.
-""")
-with st.expander("For financial advisors", expanded=False):
-    st.markdown("""
-Are you a licensed financial advisor interested in being featured in this app?
+We do not ask for or store highly sensitive personal financial information such as account numbers or Social Security numbers in this calculator. Anything you enter is used to generate estimates from those values.
 
-**Email:** retirementaudit@gmail.com
+Licensed financial advisors who want to be featured can email retirementaudit@gmail.com.
 """)
 render_creator_footer()
