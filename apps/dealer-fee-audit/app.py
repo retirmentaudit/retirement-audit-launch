@@ -1,4 +1,4 @@
-"""Dealer Fee Audit. Streamlit entrypoint: apps/dealer-fee-audit/app.py."""
+"""Dealer Fee Check. Streamlit entrypoint: apps/dealer-fee-audit/app.py."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import streamlit as st
 from demo import DEMO_UNLOCK_TOKEN, FakeSupabase, demo_active, read_secret, use_fake_supabase
 from interface import Ctx, run
 
-st.set_page_config(page_title="Dealer Fee Audit", page_icon="🚗", layout="wide")
+st.set_page_config(page_title="Dealer Fee Check", page_icon="🚗", layout="wide")
 
 REQUIRED = ("SUPABASE_URL", "SUPABASE_KEY", "STRIPE_SECRET_KEY", "APP_URL")
 

@@ -8,7 +8,8 @@ from fees import RULES_DATE
 
 from checkout import PRICE_DOLLARS  # single source of truth
 
-HEADLINE = "Dealer Fee Audit"
+HEADLINE = "Dealer Fee Check"
+PUBLIC_URL = "https://dealerfeecheck.streamlit.app"
 TAGLINE = "Paste your dealer's out-the-door quote. See every fee explained in 60 seconds."
 ALT_TAGLINE = "Know which charges are required, which are optional, and which look high."
 
@@ -25,7 +26,7 @@ LANDING_STRIP = (
 )
 
 SHORT_DISCLAIMER = (
-    "Educational information only — not legal, financial, or tax advice. Dealer Fee Audit is independent software and is "
+    "Educational information only — not legal, financial, or tax advice. Dealer Fee Check is independent software and is "
     "not a dealer, broker, lender, or law firm. State rules change; confirm with your state agency before acting. "
     "We don't guarantee any price, refund, or savings."
 )

@@ -1,6 +1,6 @@
-# Dealer Fee Audit
+# Dealer Fee Check
 
-Streamlit entrypoint: `apps/dealer-fee-audit/app.py`. **Not deployed.** Nothing here is live until Jacob approves.
+Streamlit entrypoint: `apps/dealer-fee-audit/app.py`. Public URL: https://dealerfeecheck.streamlit.app. The migration in this repo is not applied by this change.
 
 Type the line items from a dealer's out-the-door quote. Each line is sorted (taxes and government fees, doc fee,
 destination, market adjustment, dealer add-ons, finance-office products, discounts, unclear) and given a neutral

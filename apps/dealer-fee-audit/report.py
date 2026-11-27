@@ -27,7 +27,7 @@ def build_report_pdf(quote: QuoteInput, audit: QuoteAudit) -> bytes:
         pdf.multi_cell(width, size * 0.5 + 1, _safe(text))
         pdf.ln(1)
 
-    para("Dealer Fee Audit - full report", 16, "B")
+    para("Dealer Fee Check - full report", 16, "B")
     para(f"{quote.vehicle or 'Vehicle'} - {audit.state} - {quote.condition}", 10)
     para(f"Out-the-door total (as entered): ${audit.out_the_door:,.2f}", 12, "B")
     para(f"Optional or above-limit items: ${audit.removable_total:,.2f} ({audit.flagged_count} items flagged)", 11)

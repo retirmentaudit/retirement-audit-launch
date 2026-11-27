@@ -1,4 +1,4 @@
-"""One-time $7 Checkout for Dealer Fee Audit.
+"""One-time $7 Checkout for Dealer Fee Check.
 
 These functions do not call Stripe. The app retrieves a Checkout Session and
 passes it here. A paid, matching session is not enough to write `unlocks`:
@@ -21,7 +21,7 @@ PRICE_DOLLARS = 7
 PRICE_SETUP_ERROR = (
     "Setup needed: STRIPE_PRICE_ID_DEALERFEE is missing. "
     "Add the Price ID for the existing $7 one-time price (it starts with price_). "
-    "Dealer Fee Audit does not create Stripe products or prices."
+    "Dealer Fee Check does not create Stripe products or prices."
 )
 
 UNLOCK_TOKEN_SETUP_ERROR = (

@@ -1,7 +1,7 @@
-# Terms of Service — Dealer Fee Audit (DRAFT — attorney review required)
+# Terms of Service — Dealer Fee Check (DRAFT — attorney review required)
 Last updated: [DATE] · Operated by [LEGAL ENTITY NAME, LLC] ("we," "us"), [ADDRESS], [CONTACT EMAIL]
 
-**1. Acceptance.** By using Dealer Fee Audit (the "Service") you agree to these Terms. If you don't agree, don't use the Service. You must be 18 or older and in the United States.
+**1. Acceptance.** By using Dealer Fee Check (the "Service") you agree to these Terms. If you don't agree, don't use the Service. You must be 18 or older and in the United States.
 
 **2. What the Service is — and isn't.** The Service is educational software that sorts and explains the line items you type from a vehicle price quote and compares some fees to public state rules. **It is not legal, financial, tax, or insurance advice.** We are not a motor vehicle dealer, broker, auto buying service, lender, insurer, law firm, or attorney. We don't negotiate for you, contact any dealer, review or interpret your contract, or arrange financing. **We are not affiliated with, endorsed by, or connected to any dealer, manufacturer, lender, or government agency.**
 

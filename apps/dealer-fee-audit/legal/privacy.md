@@ -1,4 +1,4 @@
-# Privacy Policy — Dealer Fee Audit (DRAFT — attorney review required)
+# Privacy Policy — Dealer Fee Check (DRAFT — attorney review required)
 Last updated: [DATE] · [LEGAL ENTITY NAME, LLC], [ADDRESS], [CONTACT EMAIL]
 
 **What we collect.**

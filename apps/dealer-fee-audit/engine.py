@@ -1,4 +1,4 @@
-"""Quote analysis for Dealer Fee Audit. Pure functions, no network.
+"""Quote analysis for Dealer Fee Check. Pure functions, no network.
 
 Neutral language only: an item is "optional", "above the limit we found",
 "verify", or "ask what this is". Nothing here says a dealer broke the law.

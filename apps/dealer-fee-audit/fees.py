@@ -1,4 +1,4 @@
-"""State doc-fee limits and line-item categories for Dealer Fee Audit.
+"""State doc-fee limits and line-item categories for Dealer Fee Check.
 
 Every dollar limit here was read from a state statute, rule, or agency notice
 (see `source`) and is dated RULES_DATE. Limits change, often every January.

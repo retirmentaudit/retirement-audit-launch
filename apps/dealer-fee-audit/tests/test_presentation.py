@@ -84,7 +84,7 @@ def test_app_landing_renders_with_disclaimer(demo_env):
     at = _app().run()
     assert not at.exception
     text = _all_markdown(at)
-    assert "Dealer Fee Audit" in text
+    assert "Dealer Fee Check" in text
     assert "Not legal, financial, or tax advice" in text
     assert "not legal, financial, or tax advice" in text  # footer
 

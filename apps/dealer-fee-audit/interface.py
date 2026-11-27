@@ -1,4 +1,4 @@
-"""Streamlit screens for Dealer Fee Audit."""
+"""Streamlit screens for Dealer Fee Check."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from copy_text import (
     CHECKOUT_DISCLAIMER,
     CTA,
     HEADLINE,
+    PUBLIC_URL,
     LANDING_STRIP,
     METHOD_PARAGRAPHS,
     PRICE_DOLLARS,
@@ -472,7 +473,7 @@ def _apply_demo(ctx: Ctx):
 
 def _footer():
     st.markdown(f"<div class='fine-print'>{SHORT_DISCLAIMER}</div>", unsafe_allow_html=True)
-    st.caption("Dealer Fee Audit · independent software · not a dealer, broker, or lender · Terms and Privacy in the menu")
+    st.caption(f"Dealer Fee Check · independent software · not a dealer, broker, or lender · {PUBLIC_URL}")
 
 
 def _rules():
@@ -480,7 +481,7 @@ def _rules():
 
 
 def _sidebar(ctx: Ctx):
-    st.sidebar.markdown("**Dealer Fee Audit**")
+    st.sidebar.markdown("**Dealer Fee Check**")
     st.sidebar.caption("Independent fee checker")
     st.sidebar.radio("Menu", NAV_ITEMS, key="nav")
     if st.session_state.get("user_logged_in"):
@@ -759,10 +760,10 @@ def _paid_report(quote: QuoteInput, audit):
     st.text_area("Message", value=text, height=320, key="script_box")
     st.caption(SCRIPT_DISCLAIMER)
     c1, c2 = st.columns(2)
-    c1.download_button("Download message (.txt)", text, file_name="dealer-fee-message.txt")
+    c1.download_button("Download message (.txt)", text, file_name="dealer-fee-check-message.txt")
     try:
         c2.download_button(
-            "Download full report (PDF)", build_report_pdf(quote, audit), file_name="dealer-fee-audit.pdf", mime="application/pdf"
+            "Download full report (PDF)", build_report_pdf(quote, audit), file_name="dealer-fee-check.pdf", mime="application/pdf"
         )
     except Exception:
         c2.caption("The PDF could not be built for this quote.")
