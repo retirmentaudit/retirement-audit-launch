@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 
-from demo import demo_active, read_secret, use_fake_supabase, FakeSupabase
+from demo import DEMO_UNLOCK_TOKEN, FakeSupabase, demo_active, read_secret, use_fake_supabase
 from interface import Ctx, run
 
 st.set_page_config(page_title="Loan Plan Audit", page_icon="🧮", layout="wide")
@@ -33,6 +33,7 @@ STRIPE_SECRET_KEY = read_secret(_secrets, "STRIPE_SECRET_KEY")
 SUPABASE_URL = read_secret(_secrets, "SUPABASE_URL")
 PRICE_ID = read_secret(_secrets, "STRIPE_PRICE_ID_LOANAUDIT")
 OPENAI_API_KEY = read_secret(_secrets, "OPENAI_API_KEY")
+UNLOCK_RECORD_TOKEN = read_secret(_secrets, "UNLOCK_RECORD_TOKEN")
 LOCAL_DEMO = demo_active(STRIPE_SECRET_KEY)
 
 if LOCAL_DEMO and use_fake_supabase(SUPABASE_URL):
@@ -48,6 +49,8 @@ import stripe
 
 stripe.api_key = STRIPE_SECRET_KEY
 LOCAL_SANDBOX = LOCAL_DEMO and isinstance(supabase, FakeSupabase)
+if LOCAL_SANDBOX and not UNLOCK_RECORD_TOKEN:
+    UNLOCK_RECORD_TOKEN = DEMO_UNLOCK_TOKEN
 
 openai_client = None
 if OPENAI_API_KEY:
@@ -66,5 +69,6 @@ run(
         app_url=APP_URL,
         local_sandbox=LOCAL_SANDBOX,
         openai_client=openai_client,
+        unlock_token=UNLOCK_RECORD_TOKEN or None,
     )
 )

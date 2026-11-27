@@ -1,24 +1,33 @@
 """One-time $9 Checkout for Loan Plan Audit.
 
-These functions do not call Stripe. The app passes a Checkout Session
-(or a dict with the same fields) and writes the unlock row itself.
-
-The price id comes from the secret STRIPE_PRICE_ID_LOANAUDIT. Nothing here
-creates a Stripe product or price. California and Illinois never reach checkout.
+These functions do not call Stripe. The app retrieves a Checkout Session and
+passes it here. A paid, matching session is not enough to write `unlocks`:
+the database function also requires UNLOCK_RECORD_TOKEN, and it writes only
+for auth.uid(). Nothing here creates a Stripe product or price.
+California and Illinois never reach checkout.
 """
 
 from __future__ import annotations
+
+import hmac
 
 from states import residence_gate
 
 PRODUCT = "loan_plan_audit"
 PRICE_SECRET = "STRIPE_PRICE_ID_LOANAUDIT"
+UNLOCK_TOKEN_SECRET = "UNLOCK_RECORD_TOKEN"
 PRICE_DOLLARS = 9
 
 PRICE_SETUP_ERROR = (
     "Setup needed: STRIPE_PRICE_ID_LOANAUDIT is missing. "
     "Add the Price ID for the existing $9 one-time price (it starts with price_). "
     "Loan Plan Audit does not create Stripe products or prices."
+)
+
+UNLOCK_TOKEN_SETUP_ERROR = (
+    "Setup needed: UNLOCK_RECORD_TOKEN is missing. "
+    "Paid unlocks cannot be recorded until that secret matches the digest in private.loan_unlock_gate. "
+    "This app does not put the token in the repository."
 )
 
 
@@ -125,6 +134,45 @@ def session_matches_user(session, user_id: str, email: str | None) -> bool:
     return False
 
 
+def session_price_ids(session) -> list[str]:
+    """Price ids on expanded line items, in order. Metadata is separate."""
+    found = []
+    line_items = _get(session, "line_items")
+    data = _get(line_items, "data") if line_items is not None else None
+    if not isinstance(data, list):
+        return found
+    for item in data:
+        price = _get(item, "price")
+        if isinstance(price, str) and price:
+            found.append(price)
+            continue
+        price_id = _get(price, "id") if price is not None else None
+        if price_id:
+            found.append(str(price_id))
+    return found
+
+
+def price_matches(session, expected_price_id: str | None) -> bool:
+    """True only when the session's price is the configured Price ID.
+
+    Expanded line items win. A metadata price that disagrees with them is a mismatch.
+    A session with no price at all does not match.
+    """
+    if not expected_price_id:
+        return False
+    expected = str(expected_price_id)
+    metadata = _get(session, "metadata") or {}
+    meta_price = str(_get(metadata, "price_id") or "")
+    line_prices = session_price_ids(session)
+    if line_prices:
+        if expected not in line_prices:
+            return False
+        if meta_price and meta_price != expected:
+            return False
+        return True
+    return meta_price == expected
+
+
 def fulfillment_decision(
     session,
     user_id: str | None,
@@ -157,8 +205,7 @@ def fulfillment_decision(
     product = str(_get(metadata, "product") or "")
     if product != PRODUCT:
         return {"ok": False, "reason": "product_mismatch", "update": None}
-    price_on_session = str(_get(metadata, "price_id") or "")
-    if expected_price_id and price_on_session and price_on_session != str(expected_price_id):
+    if not price_matches(session, expected_price_id):
         return {"ok": False, "reason": "price_mismatch", "update": None}
 
     update = {
@@ -173,3 +220,75 @@ def fulfillment_decision(
     if isinstance(customer, str) and customer:
         update["stripe_customer_id"] = customer
     return {"ok": True, "reason": "unlocked", "update": update}
+
+
+def _token_matches(token, configured_token) -> bool:
+    if not isinstance(token, str) or not isinstance(configured_token, str):
+        return False
+    if len(token) < 16 or len(configured_token) < 16:
+        return False
+    return hmac.compare_digest(token, configured_token)
+
+
+def unlock_record_decision(
+    *,
+    caller_id: str | None,
+    session_id: str | None,
+    token,
+    configured_token,
+    existing_rows: list[dict] | None,
+) -> dict:
+    """Same rules as public.record_loan_unlock, without trusting the caller for user_id.
+
+    A wrong or missing token is a forged attempt and does not write.
+    A Checkout Session id already stored for someone else does not write.
+    The caller can only record a row for caller_id, which the database sets from auth.uid().
+    """
+    if not caller_id:
+        return {"ok": False, "reason": "login_required", "write": False}
+    if not _token_matches(token, configured_token):
+        return {"ok": False, "reason": "forged", "write": False}
+    if not session_id or not str(session_id).startswith("cs_") or len(str(session_id)) < 8:
+        return {"ok": False, "reason": "invalid_session", "write": False}
+    for row in existing_rows or []:
+        if row.get("stripe_checkout_session_id") == session_id and str(row.get("user_id")) != str(caller_id):
+            return {"ok": False, "reason": "session_reused", "write": False}
+    for row in existing_rows or []:
+        if str(row.get("user_id")) == str(caller_id) and row.get("product") == PRODUCT:
+            return {"ok": True, "reason": "already_unlocked", "write": False}
+    return {"ok": True, "reason": "recorded", "write": True}
+
+
+def commit_unlock(
+    *,
+    session,
+    user_id: str | None,
+    email: str | None,
+    existing_rows: list[dict] | None,
+    now_iso: str,
+    expected_price_id: str | None,
+    token,
+    configured_token,
+) -> dict:
+    """Stripe check first. The token check runs only after that passes.
+
+    An unpaid session never reaches the write, even with the recording token.
+    """
+    own = None
+    for row in existing_rows or []:
+        if user_id and str(row.get("user_id")) == str(user_id) and row.get("product") == PRODUCT:
+            own = row
+            break
+    decision = fulfillment_decision(session, user_id, email, own, now_iso, expected_price_id)
+    if decision["reason"] != "unlocked" or not decision.get("update"):
+        return {"ok": decision["ok"], "reason": decision["reason"], "recorded": False, "update": None}
+    record = unlock_record_decision(
+        caller_id=user_id,
+        session_id=decision["update"]["stripe_checkout_session_id"],
+        token=token,
+        configured_token=configured_token,
+        existing_rows=existing_rows,
+    )
+    if not record["ok"] or not record["write"]:
+        return {"ok": record["ok"], "reason": record["reason"], "recorded": False, "update": None}
+    return {"ok": True, "reason": "recorded", "recorded": True, "update": decision["update"]}

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 DEMO_USER_ID = "demo-local-user"
 DEMO_EMAIL = "demo@example.com"
 PAID_DEMO_SESSION_ID = "cs_demo_paid"
+DEMO_UNLOCK_TOKEN = "local-demo-unlock-token"
 
 _PLACEHOLDERS = {
     "SUPABASE_URL": "https://example.supabase.co",
