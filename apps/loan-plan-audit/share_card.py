@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from copy_text import SHORT_DISCLAIMER
+from copy_text import BRAND_KICKER, HEADLINE, PUBLIC_URL, SHORT_DISCLAIMER
 from engine import AuditResult, PlanResult, soonest_payoff
 
 FONTS = Path(__file__).resolve().parent / "fonts"
@@ -61,7 +61,7 @@ def _money(amount: float | None) -> str:
 
 def card_lines(audit: AuditResult, plans: list[PlanResult], show_private: bool) -> list[str]:
     """Text placed on the card. Private figures are omitted unless show_private is true."""
-    lines = ["Loan Plan Audit", "My loans, every plan", "First-year estimated monthly payment"]
+    lines = [HEADLINE, "My loans, every plan", "First-year estimated monthly payment"]
     for plan in plans:
         if plan.eligible and plan.first_year_monthly is not None:
             lines.append(f"{plan.label}  {_money(plan.first_year_monthly)}")
@@ -74,7 +74,7 @@ def card_lines(audit: AuditResult, plans: list[PlanResult], show_private: bool) 
     if show_private:
         lines.append(f"Balance {_money(audit.total_balance)}")
         lines.append(f"Income {_money(audit.agi_used)}")
-    lines.append("loanplanaudit.com")
+    lines.append(PUBLIC_URL)
     lines.append("Estimate. Not advice.")
     lines.append(SHORT_DISCLAIMER)
     return lines
@@ -91,7 +91,7 @@ def render_share_card(audit: AuditResult, plans: list[PlanResult], show_private:
     small = _font("Inter-Regular.ttf", 22)
     tiny = _font("Inter-Regular.ttf", 20)
 
-    draw.text((72, 70), "LOAN PLAN AUDIT", font=_font("Inter-SemiBold.ttf", 24), fill=MINT)
+    draw.text((72, 70), BRAND_KICKER, font=_font("Inter-SemiBold.ttf", 24), fill=MINT)
     draw.text((72, 120), "My loans, every plan", font=title_font, fill=PAPER)
     draw.text((72, 230), "First-year estimated monthly payment", font=sub_font, fill="#D5DEEA")
 
@@ -126,7 +126,7 @@ def render_share_card(audit: AuditResult, plans: list[PlanResult], show_private:
     draw.text((72, 1110), detail, font=sub_font, fill=PAPER)
 
     draw.rectangle((0, 1180, 1080, 1350), fill="#081628")
-    footer = "loanplanaudit.com    ·    Estimate. Not advice."
+    footer = f"{PUBLIC_URL}    ·    Estimate. Not advice."
     draw.text((72, 1196), footer, font=small, fill=MINT)
     for index, line in enumerate(_wrap(draw, SHORT_DISCLAIMER, tiny, 936)[:4]):
         draw.text((72, 1232 + index * 24), line, font=tiny, fill="#D5DEEA")

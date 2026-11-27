@@ -1,4 +1,4 @@
-"""One-time $9 Checkout for Loan Plan Audit.
+"""One-time $9 Checkout for Student Loan Plan Picker.
 
 These functions do not call Stripe. The app retrieves a Checkout Session and
 passes it here. A paid, matching session is not enough to write `unlocks`:
@@ -21,7 +21,7 @@ PRICE_DOLLARS = 9
 PRICE_SETUP_ERROR = (
     "Setup needed: STRIPE_PRICE_ID_LOANAUDIT is missing. "
     "Add the Price ID for the existing $9 one-time price (it starts with price_). "
-    "Loan Plan Audit does not create Stripe products or prices."
+    "Student Loan Plan Picker does not create Stripe products or prices."
 )
 
 UNLOCK_TOKEN_SETUP_ERROR = (

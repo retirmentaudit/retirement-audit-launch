@@ -1,7 +1,7 @@
-# Terms of Service — Loan Plan Audit (DRAFT — attorney review required)
+# Terms of Service — Student Loan Plan Picker (DRAFT — attorney review required)
 Last updated: [DATE] · Operated by [LEGAL ENTITY NAME, LLC] ("we," "us"), [ADDRESS], [CONTACT EMAIL]
 
-**1. Acceptance.** By using Loan Plan Audit (the "Service") you agree to these Terms. If you don't agree, don't use the Service. You must be 18+ and in the United States.
+**1. Acceptance.** By using Student Loan Plan Picker (the "Service") you agree to these Terms. If you don't agree, don't use the Service. You must be 18+ and in the United States.
 
 **2. What the Service is — and isn't.** The Service is an educational software calculator that estimates payments under federal student loan repayment plans based on information you enter. **It is not financial, legal, tax, or investment advice and does not recommend any plan for you.** We are not a lender, loan servicer, debt relief company, debt settlement/adjustment provider, credit counselor, attorney, or tax preparer. We do not enroll you in any plan, submit forms, contact the U.S. Department of Education ("ED") or your servicer, or change your loans. **We are not affiliated with, endorsed by, or connected to ED, Federal Student Aid, or any loan servicer.** Free tools and help are available at StudentAid.gov and from your servicer; you never have to pay for help with federal student loans.
 

@@ -1,4 +1,4 @@
-"""Streamlit screens for Loan Plan Audit."""
+"""Streamlit screens for Student Loan Plan Picker."""
 
 from __future__ import annotations
 
@@ -273,7 +273,7 @@ def _apply_what_if(scenario: ScenarioInput) -> ScenarioInput:
 
 def _footer():
     st.markdown(f"<div class='fine-print'>{SHORT_DISCLAIMER}</div>", unsafe_allow_html=True)
-    st.caption("Loan Plan Audit · an independent calculator · loanplanaudit.com")
+    st.caption("Student Loan Plan Picker · an independent calculator · https://loanplanaudit.streamlit.app")
 
 
 def _rules():
@@ -618,7 +618,7 @@ def _seed_scenarios(ctx: Ctx):
 
 
 def _sidebar(ctx: Ctx):
-    st.sidebar.markdown("**Loan Plan Audit**")
+    st.sidebar.markdown("**Student Loan Plan Picker**")
     st.sidebar.caption("An independent calculator")
     st.sidebar.radio("Menu", NAV_ITEMS, key="nav")
     if st.session_state.get("user_logged_in"):
@@ -914,7 +914,7 @@ def _paid_world(audit, plans, scenario: ScenarioInput, world_key: str, show_priv
     st.download_button(
         "Download the report PDF",
         data=build_report_pdf(audit, plans, generated_on=generated),
-        file_name="loan-plan-audit.pdf",
+        file_name="student-loan-plan-picker.pdf",
         mime="application/pdf",
         type="primary",
         key=f"pdf_{world_key}",
@@ -924,7 +924,7 @@ def _paid_world(audit, plans, scenario: ScenarioInput, world_key: str, show_priv
     st.download_button(
         "Download share card",
         data=png,
-        file_name="loan-plan-audit-card.png",
+        file_name="student-loan-plan-picker-card.png",
         mime="image/png",
         key=f"card_{world_key}",
     )

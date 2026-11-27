@@ -25,7 +25,7 @@ def report_sections(audit: AuditResult, plans: list[PlanResult], generated_on: s
     """Plain-text sections, in the order the PDF prints them."""
     when = generated_on or date.today().isoformat()
     sections = [
-        "Loan Plan Audit",
+        "Student Loan Plan Picker",
         f"Software report prepared {when}. Rules last checked: {RULES_DATE}.",
         RESULTS_DISCLAIMER,
         SHORT_DISCLAIMER,
@@ -91,12 +91,12 @@ def build_report_pdf(audit: AuditResult, plans: list[PlanResult], generated_on: 
     pdf.set_text_color(247, 245, 240)
     pdf.set_font(family, "B", 18)
     pdf.set_xy(12, 8)
-    pdf.cell(0, 12, "Loan Plan Audit", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 12, "Student Loan Plan Picker", new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(11, 31, 58)
     pdf.set_y(34)
     pdf.set_font(family, "", 10)
     for section in report_sections(audit, plans, generated_on):
-        style = "B" if section in {"How we calculated", "Sources", "Loan Plan Audit"} else ""
+        style = "B" if section in {"How we calculated", "Sources", "Student Loan Plan Picker"} else ""
         size = 14 if section == "How we calculated" else 10
         pdf.set_font(family, style, size)
         pdf.multi_cell(0, 5.5, section, new_x="LMARGIN", new_y="NEXT")
