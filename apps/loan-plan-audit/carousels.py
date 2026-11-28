@@ -35,11 +35,11 @@ def _money(amount: float) -> str:
 
 def save_deck() -> list[Slide]:
     return [
-        Slide("studentaid.gov", "SAVE is over. Now what?", "A short look at the public timeline. This is not a deadline tied to a fee."),
-        Slide("studentaid.gov", "What ended, and when", "A court settlement ended SAVE in March 2026. Source: studentaid.gov."),
+        Slide("studentaid.gov", "SAVE ended in March 2026", "A court order ended it. It is not a plan in this calculator. Source: studentaid.gov."),
+        Slide("studentaid.gov", "What the page describes", "Borrowers who were on SAVE choose another plan they can use. This calculator does not offer SAVE. Source: studentaid.gov."),
         Slide("studentaid.gov", "Notices", "Servicers have been sending notices since July 1, 2026. Read the date on yours. Source: studentaid.gov."),
-        Slide("studentaid.gov", "If you do not choose", "Public descriptions say placement can be a Standard plan. Source: studentaid.gov."),
-        Slide("hypothetical", "See your numbers free", "Compare RAP, IBR, and Standard with the loans you enter. " + PUBLIC_URL),
+        Slide("studentaid.gov", "If no plan is chosen", "Public descriptions say placement can be Standard, or Tiered Standard when a loan was first disbursed on or after July 1, 2026. Source: studentaid.gov."),
+        Slide("hypothetical", "See your numbers free", "The first disbursement date chooses the plans. Compare them with the loans you enter. " + PUBLIC_URL),
         _disclaimer(),
     ]
 
@@ -96,7 +96,7 @@ def pslf_deck() -> list[Slide]:
     return [
         Slide("studentaid.gov", "The plan that does not count", "Tiered Standard does not count toward PSLF. Source: studentaid.gov."),
         Slide("studentaid.gov", "Who can be placed there", "A loan first disbursed on or after July 1, 2026 can be placed on Tiered Standard. Source: studentaid.gov."),
-        Slide("studentaid.gov", "What this calculator marks as counting", "RAP, IBR, and 10-year Standard are marked as counting in this estimate. Tiered Standard is not."),
+        Slide("studentaid.gov", "What this calculator marks as counting", "RAP, IBR, PAYE, ICR, and 10-year Standard are marked as counting in this estimate. Tiered Standard, Graduated, and Extended are not."),
         Slide("studentaid.gov", "Check the help tool", "Confirm your own count with the PSLF Help Tool on StudentAid.gov."),
         _disclaimer(),
     ]

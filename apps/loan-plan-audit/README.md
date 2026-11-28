@@ -1,6 +1,6 @@
 # Student Loan Plan Picker
 
-An independent calculator that compares estimated payments under RAP, IBR, and Standard. It does not enroll anyone in a plan, contact a servicer, or recommend a plan.
+An independent calculator that compares estimated payments. The first disbursement date chooses the plans: on or after July 1, 2026, RAP and Tiered Standard; earlier loans also include Standard, Graduated, Extended, IBR, PAYE, and ICR. It does not enroll anyone in a plan, contact a servicer, or recommend a plan.
 
 The free page shows the first-year monthly estimate. The full report is a **one-time $9** software purchase: lifetime comparison, payoff timeline, what-if sliders, a PDF, a share card, and saved scenarios. There is no subscription.
 
