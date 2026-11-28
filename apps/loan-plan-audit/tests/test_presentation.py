@@ -8,6 +8,7 @@ from copy_text import (
     INPUT_LABELS,
     LANDING_STRIP,
     RESULTS_DISCLAIMER,
+    RULES_CHECKED_LINE,
     SHORT_DISCLAIMER,
     privacy_markdown,
     terms_markdown,
@@ -102,6 +103,22 @@ def test_sample_posts_end_on_the_disclaimer_and_cite_studentaid():
         assert render_slide(slides[-1]).size == (1080, 1350)
     salary = dict(decks)["same-salary-three-plans"]
     assert "Hypothetical example" in salary[0].body
+
+
+def test_save_is_not_offered_and_the_footer_names_the_check_date():
+    assert RULES_CHECKED_LINE == "Rules last checked: Nov 2026"
+    interface = (ROOT / "interface.py").read_text(encoding="utf-8")
+    copy = (ROOT / "copy_text.py").read_text(encoding="utf-8")
+    assert "Currently on SAVE?" not in interface
+    assert "Currently on SAVE?" not in copy
+    assert "SAVE checklist" not in interface
+    assert RULES_CHECKED_LINE in copy
+    footer = interface[interface.index("def _footer"):interface.index("def _rules")]
+    assert "RULES_CHECKED_LINE" in footer
+    assert "First disbursement date" in interface
+    assert "SAVE ended in March 2026" in copy
+    assert "enroll in the SAVE" not in copy.lower()
+    assert "enroll in save" not in interface.lower()
 
 
 def test_inputs_do_not_ask_for_credentials_and_source_stays_clean():

@@ -5,8 +5,11 @@ from datetime import date
 import pytest
 
 from engine import (
+    PLAN_EXTENDED,
+    PLAN_GRADUATED,
     PLAN_IBR10,
     PLAN_IBR15,
+    PLAN_ICR,
     PLAN_PAYE,
     PLAN_RAP,
     PLAN_STANDARD,
@@ -18,6 +21,8 @@ from engine import (
     make_scenario,
     months_until,
     poverty_guideline,
+    icr_monthly,
+    income_percentage_factor,
     rap_payment_dollars,
     rap_percent_points,
     scenario_from_dict,
@@ -150,16 +155,26 @@ def test_parent_plus_and_ffel_hide_rap():
     assert parent[PLAN_RAP].eligible is False
     assert "Parent PLUS" in parent[PLAN_RAP].chips[0]
     assert parent[PLAN_STANDARD].eligible is True
-    assert parent[PLAN_IBR15].eligible is True
+    assert parent[PLAN_GRADUATED].eligible is True
+    assert parent[PLAN_IBR15].eligible is False
+    assert parent[PLAN_PAYE].eligible is False
+    assert parent[PLAN_ICR].eligible is False
 
     ffel = _plans(loans=(LoanInput(40_000, 6.5, "FFEL", "no"),))
     assert ffel[PLAN_RAP].eligible is False
     assert "FFEL" in ffel[PLAN_RAP].chips[0]
+    assert ffel[PLAN_IBR15].eligible is True
+    assert ffel[PLAN_PAYE].eligible is False
+    assert ffel[PLAN_ICR].eligible is False
 
     consolidation = _plans(
         loans=(LoanInput(40_000, 6.5, "Consolidation", "no", True),),
     )
     assert consolidation[PLAN_RAP].eligible is False
+    assert consolidation[PLAN_PAYE].eligible is False
+    assert consolidation[PLAN_IBR15].eligible is False
+    assert consolidation[PLAN_ICR].eligible is True
+    assert "July 1, 2028" in " ".join(consolidation[PLAN_ICR].chips)
 
 
 def test_post_2026_only_rap_and_tiered_and_not_sure_shows_both():
@@ -167,8 +182,11 @@ def test_post_2026_only_rap_and_tiered_and_not_sure_shows_both():
     assert post[PLAN_RAP].eligible is True
     assert post[PLAN_TIERED].eligible is True
     assert post[PLAN_STANDARD].eligible is False
+    assert post[PLAN_GRADUATED].eligible is False
+    assert post[PLAN_EXTENDED].eligible is False
     assert post[PLAN_IBR15].eligible is False
     assert post[PLAN_PAYE].eligible is False
+    assert post[PLAN_ICR].eligible is False
 
     mixed = _plans(
         loans=(
@@ -306,3 +324,66 @@ def test_state_is_required_and_new_borrower_percent():
     assert ten[PLAN_IBR10].first_year_monthly < fifteen[PLAN_IBR15].first_year_monthly
     assert ten[PLAN_IBR10].term_months == 240
     assert fifteen[PLAN_IBR15].term_months == 300
+
+
+def test_icr_matches_the_2026_federal_register_examples():
+    assert income_percentage_factor(50_000, "single") == pytest.approx(0.8683, abs=0.00001)
+    assert income_percentage_factor(35_104, "single") == pytest.approx(0.7189, abs=0.00001)
+    kesha = make_scenario(
+        loans=(LoanInput(15_000, 6, "Direct Unsubsidized", "no"),),
+        agi=35_104,
+        filing_status="single",
+        family_size=1,
+        state="TX",
+        annual_raise=0,
+        poverty_inflation=0,
+    )
+    base = amort_payment(15_000, 0.06 / 12, 144)
+    assert icr_monthly(35_104, kesha, 0, base) == pytest.approx(105.23, abs=0.05)
+    plans = _plans(
+        loans=(LoanInput(15_000, 6, "Direct Unsubsidized", "no"),),
+        agi=35_104,
+        annual_raise=0,
+        poverty_inflation=0,
+        family_size=1,
+    )
+    assert plans[PLAN_ICR].eligible is True
+    assert plans[PLAN_ICR].first_year_monthly == pytest.approx(105.23, abs=0.05)
+    assert "Closing by July 1, 2028" in plans[PLAN_ICR].chips
+
+    santiago = make_scenario(
+        loans=(LoanInput(60_000, 6, "Direct Unsubsidized", "no"),),
+        agi=41_769,
+        family_size=1,
+        state="TX",
+        annual_raise=0,
+        poverty_inflation=0,
+    )
+    santiago_base = amort_payment(60_000, 0.06 / 12, 144)
+    assert icr_monthly(41_769, santiago, 0, santiago_base) == pytest.approx(430.15, abs=0.05)
+
+
+def test_graduated_and_extended_for_older_loans():
+    zero = _plans(
+        loans=(LoanInput(12_000, 0, "Direct Unsubsidized", "no"),),
+        agi=40_000,
+        annual_raise=0,
+    )
+    graduated = zero[PLAN_GRADUATED]
+    assert graduated.eligible is True
+    assert graduated.term_months == 120
+    assert graduated.counts_for_pslf is False
+    assert graduated.end_reason == "paid_off"
+    assert graduated.total_paid == pytest.approx(12_000, abs=1)
+    assert zero[PLAN_EXTENDED].eligible is False
+
+    older = _plans(loans=(LoanInput(40_000, 6.5, "Direct Unsubsidized", "no"),))
+    assert older[PLAN_EXTENDED].eligible is True
+    assert older[PLAN_EXTENDED].term_months == 300
+    assert older[PLAN_EXTENDED].counts_for_pslf is False
+    assert older[PLAN_GRADUATED].first_year_monthly < older[PLAN_EXTENDED].first_year_monthly
+
+    border = _plans(loans=(LoanInput(30_000, 5, "Direct Unsubsidized", "no"),))
+    assert border[PLAN_EXTENDED].eligible is False
+    above = _plans(loans=(LoanInput(30_000.01, 5, "Direct Unsubsidized", "no"),))
+    assert above[PLAN_EXTENDED].eligible is True

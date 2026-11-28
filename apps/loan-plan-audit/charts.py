@@ -16,6 +16,9 @@ PLAN_COLORS = {
     "ibr_15": "#2BD9A0",
     "ibr_10": "#14956C",
     "paye_bridge": "#F5B841",
+    "graduated": "#7C8EA3",
+    "extended": "#3D4F66",
+    "icr": "#C9842A",
 }
 
 _LAYOUT = dict(
@@ -94,7 +97,7 @@ def payoff_timeline(plans: list[PlanResult], start: date, pslf: bool, pslf_credi
             )
         )
     markers = [
-        ("2026-12-31", "SAVE notices by end of 2026"),
+        ("2026-12-31", "Notices to former SAVE borrowers"),
         (PAYE_SUNSET.isoformat(), "PAYE/ICR sunset"),
         (add_months(start, 359).isoformat(), "RAP month 360"),
     ]

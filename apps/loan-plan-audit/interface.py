@@ -36,7 +36,8 @@ from copy_text import (
     QUIET_LINE,
     RESULTS_DISCLAIMER,
     RULES_BANNER,
-    SAVE_CHECKLIST,
+    RULES_CHECKED_LINE,
+    SAVE_ENDED,
     SERVICER_QUESTIONS,
     SHORT_DISCLAIMER,
     SOURCES,
@@ -125,7 +126,6 @@ def _ensure(key, value):
 
 # Widget keys disappear when that step is not on screen. saved_inputs keeps them.
 _INPUT_DEFAULTS = {
-    "on_save": "No",
     "pslf_credited": 0,
     "idr_credited": 0,
     "new_borrower": "No",
@@ -252,7 +252,7 @@ def _scenario_from_widgets() -> ScenarioInput:
         pslf_months_credited=int(_field("pslf_credited", 0) or 0),
         idr_months_credited=int(_field("idr_credited", 0) or 0),
         new_borrower_after_2014=NEW_VALUES.get(_field("new_borrower", "No"), "no"),
-        on_save=_field("on_save", "No") == "Yes",
+        on_save=False,
         start_date=date(2026, 12, 1),
     )
 
@@ -277,7 +277,8 @@ def _footer():
     st.markdown(
         f"<p class='quiet-footer'>{SHORT_DISCLAIMER} "
         f"<a href='?page=Terms' target='_self'>Terms</a> · "
-        f"<a href='?page=Privacy' target='_self'>Privacy</a> · {PUBLIC_URL}</p>",
+        f"<a href='?page=Privacy' target='_self'>Privacy</a> · {PUBLIC_URL}</p>"
+        f"<p class='quiet-footer'>{RULES_CHECKED_LINE}</p>",
         unsafe_allow_html=True,
     )
 
@@ -583,7 +584,6 @@ def _apply_demo(ctx: Ctx):
         st.session_state.loan_rate_0 = 6.5
         st.session_state.loan_type_0 = "Direct Unsubsidized"
         st.session_state.loan_when_0 = "Before July 1, 2026"
-        st.session_state.on_save = "Yes"
         st.session_state.agi = 53000.0
         st.session_state.filing = "Single"
         st.session_state.dependents = 0
@@ -700,7 +700,13 @@ def _loan_editor():
             st.selectbox("Loan type", LOAN_TYPES, key=f"loan_type_{index}", persist_state="session")
         with right:
             st.number_input("Interest rate (%)", min_value=0.0, max_value=20.0, step=0.1, key=f"loan_rate_{index}", persist_state="session")
-            st.selectbox("First disbursed", WHEN_LABELS, key=f"loan_when_{index}", persist_state="session")
+            st.selectbox(
+                "First disbursement date",
+                WHEN_LABELS,
+                key=f"loan_when_{index}",
+                help="On or after July 1, 2026 shows RAP and Tiered Standard only. Before that date also shows Standard, Graduated, Extended, IBR, PAYE, and ICR.",
+                persist_state="session",
+            )
         if st.session_state.get(f"loan_type_{index}") == "Consolidation":
             st.checkbox("This consolidation repaid a Parent PLUS loan", key=f"loan_parent_{index}", persist_state="session")
         if len(st.session_state.loans) > 1 and st.button("Remove this loan", key=f"remove_{index}"):
@@ -717,9 +723,8 @@ def _loan_editor():
         st.session_state[f"loan_when_{index}"] = "Before July 1, 2026"
         st.session_state[f"loan_parent_{index}"] = False
         st.rerun()
-    for key in ("on_save", "pslf_credited", "idr_credited", "new_borrower"):
+    for key in ("pslf_credited", "idr_credited", "new_borrower"):
         _prime(key)
-    st.selectbox("Currently on SAVE?", YES_NO, key="on_save", persist_state="session")
     st.number_input("Months already credited toward PSLF", min_value=0, max_value=600, step=1, key="pslf_credited", persist_state="session")
     st.number_input("Months already credited toward an IDR count", min_value=0, max_value=600, step=1, key="idr_credited", persist_state="session")
     st.selectbox("First loan after July 1, 2014?", NEW_LABELS, key="new_borrower", help="Used for the 10% or 15% IBR estimate.", persist_state="session")
@@ -1089,9 +1094,7 @@ def _results(ctx: Ctx):
         _render_world(ctx, audit, audit.worlds["primary"], scenario, unlocked, blocked, "primary", show_private)
     if unlocked:
         _save_panel(ctx, scenario, audit)
-    st.markdown("### Your SAVE checklist" if scenario.on_save else "### SAVE checklist")
-    for item in SAVE_CHECKLIST:
-        st.markdown(f"- {item}")
+    st.caption(SAVE_ENDED)
     _links()
     if blocked:
         st.info(blocked_state_note(base.state))

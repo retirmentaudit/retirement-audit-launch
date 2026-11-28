@@ -25,6 +25,9 @@ PLAN_COLORS = {
     "ibr_15": MINT,
     "ibr_10": "#8FF3D2",
     "paye_bridge": GOLD,
+    "graduated": "#D5DEEA",
+    "extended": "#8FA0B8",
+    "icr": "#E7C27A",
 }
 
 
