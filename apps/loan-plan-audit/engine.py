@@ -52,20 +52,60 @@ LOAN_TYPES = (
 )
 
 PLAN_STANDARD = "standard_10"
+PLAN_GRADUATED = "graduated"
+PLAN_EXTENDED = "extended"
 PLAN_TIERED = "tiered_standard"
 PLAN_RAP = "rap"
 PLAN_IBR15 = "ibr_15"
 PLAN_IBR10 = "ibr_10"
 PLAN_PAYE = "paye_bridge"
+PLAN_ICR = "icr"
 
 LABELS = {
     PLAN_STANDARD: "Standard (10-year)",
+    PLAN_GRADUATED: "Graduated",
+    PLAN_EXTENDED: "Extended (25-year)",
     PLAN_TIERED: "Tiered Standard",
     PLAN_RAP: "RAP",
     PLAN_IBR15: "IBR (15%)",
     PLAN_IBR10: "IBR (10%)",
     PLAN_PAYE: "PAYE until July 1, 2028",
+    PLAN_ICR: "ICR until July 1, 2028",
 }
+
+# Income percentage factors for July 1, 2026 through June 30, 2027.
+# Federal Register notice 2026-11540 (June 9, 2026), Attachment 1.
+_ICR_SINGLE = (
+    (13_717, 55.00),
+    (18_873, 57.79),
+    (24_285, 60.57),
+    (29_819, 66.23),
+    (35_104, 71.89),
+    (41_769, 80.33),
+    (52_462, 88.77),
+    (65_798, 100.00),
+    (79_138, 100.00),
+    (95_112, 111.80),
+    (121_787, 123.50),
+    (172_492, 141.20),
+    (197_779, 150.00),
+    (352_277, 200.00),
+)
+_ICR_MARRIED = (
+    (13_717, 50.52),
+    (21_641, 56.68),
+    (25_790, 59.56),
+    (33_717, 67.79),
+    (41_769, 75.22),
+    (52_462, 87.61),
+    (65_797, 100.00),
+    (79_138, 100.00),
+    (99_146, 109.40),
+    (132_481, 125.00),
+    (179_158, 140.60),
+    (250_560, 150.00),
+    (409_433, 200.00),
+)
 
 
 def money(value: float) -> float:
@@ -117,6 +157,90 @@ def tiered_term_months(balance: float) -> int:
     if balance < 100_000:
         return 240
     return 300
+
+
+def consolidation_term_months(balance: float) -> int:
+    """Long-standing Direct Consolidation term. Not reprinted on the SAVE article."""
+    if balance < 7_500:
+        return 120
+    if balance < 10_000:
+        return 144
+    if balance < 20_000:
+        return 180
+    if balance < 40_000:
+        return 240
+    if balance < 60_000:
+        return 300
+    return 360
+
+
+def income_percentage_factor(agi: float, filing_status: str) -> float:
+    """2026–27 ICR factor as a decimal. AGI outside the table uses the end factor."""
+    table = _ICR_MARRIED if filing_status in {"mfj", "hoh"} else _ICR_SINGLE
+    income = float(agi)
+    if income <= table[0][0]:
+        percent = table[0][1]
+    elif income >= table[-1][0]:
+        percent = table[-1][1]
+    else:
+        percent = table[-1][1]
+        for (low_agi, low_factor), (high_agi, high_factor) in zip(table, table[1:]):
+            if low_agi <= income <= high_agi:
+                span = high_agi - low_agi
+                share = 0.0 if span == 0 else (income - low_agi) / span
+                raw = low_factor + share * (high_factor - low_factor)
+                percent = float(Decimal(str(raw)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+                break
+    return percent / 100
+
+
+def icr_monthly(agi: float, scenario: ScenarioInput, year_offset: int, twelve_year_base: float) -> float:
+    """Lesser of 20% of (AGI − 100% of poverty) / 12 and the 12-year payment times the factor."""
+    poverty = poverty_guideline(scenario.family_size, scenario.state, year_offset, scenario.poverty_inflation)
+    discretionary = max(0.0, agi - poverty)
+    income_side = 0.20 * discretionary / 12
+    factor = income_percentage_factor(agi, scenario.filing_status)
+    return min(income_side, max(0.0, twelve_year_base) * factor)
+
+
+def graduated_schedule(balance: float, monthly_rate: float, term_months: int) -> list[float]:
+    """Payments rise every 24 months. The last step is three times the first, and the first covers opening interest."""
+    term_months = max(1, int(term_months))
+    steps: list[int] = []
+    left = term_months
+    while left > 0:
+        steps.append(min(24, left))
+        left -= steps[-1]
+    count = len(steps)
+
+    def ending(first: float) -> float:
+        remaining = max(0.0, balance)
+        for index, length in enumerate(steps):
+            fraction = 0.0 if count == 1 else index / (count - 1)
+            payment = first * (1 + 2 * fraction)
+            for _ in range(length):
+                if remaining <= DUST:
+                    return 0.0
+                interest = remaining * monthly_rate
+                due = min(payment, remaining + interest)
+                remaining = remaining + interest - due
+                if remaining <= DUST:
+                    remaining = 0.0
+        return remaining
+
+    low, high = 0.0, max(balance, 1.0)
+    for _ in range(64):
+        mid = (low + high) / 2
+        if ending(mid) > DUST:
+            low = mid
+        else:
+            high = mid
+    first = max(high, balance * monthly_rate)
+    payments: list[float] = []
+    for index, length in enumerate(steps):
+        fraction = 0.0 if count == 1 else index / (count - 1)
+        payments.extend([first * (1 + 2 * fraction)] * length)
+    return payments
 
 
 def poverty_guideline(family_size: int, state: str, year_offset: int = 0, inflation: float = 0.0) -> float:
@@ -294,6 +418,29 @@ def rap_block_reason(loans: tuple[LoanInput, ...]) -> str | None:
     return "Not modeled for Parent PLUS or FFEL"
 
 
+def _has_parent(loans: tuple[LoanInput, ...]) -> bool:
+    return any(loan.loan_type == "Parent PLUS" for loan in loans)
+
+
+def _has_parent_consolidation(loans: tuple[LoanInput, ...]) -> bool:
+    return any(loan.loan_type == "Consolidation" and loan.repaid_parent_plus for loan in loans)
+
+
+def _has_ffel(loans: tuple[LoanInput, ...]) -> bool:
+    return any(loan.loan_type == "FFEL" for loan in loans)
+
+
+def _sunset_successor(scenario: ScenarioInput, rap_reason: str | None) -> tuple[str, int | None, str, float | None]:
+    """Plan to continue after July 1, 2028. The StudentAid page does not name the successor."""
+    if rap_reason is None:
+        return "rap", RAP_PAYMENTS, "RAP", None
+    if _has_parent(scenario.loans) or _has_parent_consolidation(scenario.loans):
+        return "fixed", None, "Standard", None
+    if scenario.new_borrower_after_2014 == "yes":
+        return "ibr10", 240, "IBR", None
+    return "ibr15", 300, "IBR", None
+
+
 def disbursement_status(loans: tuple[LoanInput, ...]) -> str:
     """post, pre, or uncertain. Any confirmed on-or-after date selects post for every loan."""
     flags = [loan.disbursed_on_or_after_july_2026 for loan in loans]
@@ -451,13 +598,28 @@ def _idr_payment(kind: str, agi: float, scenario: ScenarioInput, year_offset: in
     return min(pct * disc / 12, std_cap)
 
 
-def _scheduled(kind: str, month_index: int, scenario: ScenarioInput, agi0: float, std_cap: float, fixed: float | None) -> float:
+def _scheduled(
+    kind: str,
+    month_index: int,
+    scenario: ScenarioInput,
+    agi0: float,
+    std_cap: float,
+    fixed: float | None,
+    schedule: list[float] | None = None,
+    icr_base: float | None = None,
+) -> float:
     if kind == "fixed":
         return float(fixed or 0)
+    if kind == "schedule":
+        if not schedule:
+            return 0.0
+        return float(schedule[min(month_index, len(schedule) - 1)])
     year = month_index // 12
     agi = agi0 * ((1 + scenario.annual_raise) ** year)
     if kind == "rap":
         return float(rap_payment_dollars(agi, scenario.dependents))
+    if kind == "icr":
+        return icr_monthly(agi, scenario, year, float(icr_base or 0))
     return _idr_payment(kind, agi, scenario, year, std_cap)
 
 
@@ -477,6 +639,8 @@ def simulate(
     switch_kind: str | None = None,
     switch_idr_limit: int | None = None,
     paye_idr_limit: int | None = None,
+    schedule: list[float] | None = None,
+    icr_base: float | None = None,
 ) -> tuple[list[MonthRecord], str, float]:
     """Run months. Returns records, end reason, and the forgiven balance (0 when paid off)."""
     records: list[MonthRecord] = []
@@ -492,7 +656,16 @@ def simulate(
     for month_index in range(limit):
         if switch_at is not None and month_index >= switch_at and switch_kind:
             active_kind = switch_kind
-        scheduled = _scheduled(active_kind, month_index, scenario, agi0, std_cap, fixed_payment)
+        scheduled = _scheduled(
+            active_kind,
+            month_index,
+            scenario,
+            agi0,
+            std_cap,
+            fixed_payment,
+            schedule,
+            icr_base,
+        )
         if active_kind == "rap":
             record, remaining = apply_rap_month(remaining, monthly_rate, scheduled, extra)
         else:
@@ -622,8 +795,10 @@ def _run_counted_plan(
     switch_kind: str | None = None,
     switch_idr_limit: int | None = None,
     paye_idr_limit: int | None = None,
+    schedule: list[float] | None = None,
+    icr_base: float | None = None,
 ) -> PlanResult:
-    first = _scheduled(kind, 0, scenario, agi0, std_cap, fixed_payment)
+    first = _scheduled(kind, 0, scenario, agi0, std_cap, fixed_payment, schedule, icr_base)
     if pslf_counts and scenario.pslf_months_credited >= PSLF_PAYMENTS and balance > DUST:
         return _empty_immediate(plan_id, scenario, "pslf", balance, chips, True, term, notes, first)
     if (
@@ -639,8 +814,10 @@ def _run_counted_plan(
     if idr_limit is not None:
         max_months = max(0, idr_limit - scenario.idr_months_credited)
     if switch_at is not None:
-        successor = switch_idr_limit or RAP_PAYMENTS
-        max_months = max(0, successor - scenario.idr_months_credited)
+        if switch_idr_limit is None:
+            max_months = switch_at + 600
+        else:
+            max_months = max(0, switch_idr_limit - scenario.idr_months_credited)
     if pslf_counts:
         pslf_left = max(0, PSLF_PAYMENTS - scenario.pslf_months_credited)
         max_months = min(max_months, pslf_left) if max_months else pslf_left
@@ -664,9 +841,12 @@ def _run_counted_plan(
         switch_kind=switch_kind,
         switch_idr_limit=switch_idr_limit,
         paye_idr_limit=paye_idr_limit,
+        schedule=schedule,
+        icr_base=icr_base,
     )
-    if kind == "fixed" and reason == "term_complete" and forgiven > DUST:
+    if kind in {"fixed", "schedule"} and reason == "term_complete" and forgiven > DUST:
         # Cent residue on a fixed schedule: one more month clears a payoff, not a discharge.
+        tail = fixed_payment if kind == "fixed" else (schedule[-1] if schedule else 0)
         extra_records, reason2, forgiven2 = simulate(
             balance=forgiven,
             monthly_rate=monthly_rate,
@@ -674,7 +854,7 @@ def _run_counted_plan(
             scenario=scenario,
             agi0=agi0,
             std_cap=std_cap,
-            fixed_payment=fixed_payment,
+            fixed_payment=tail,
             max_months=2,
             pslf_counts=False,
             idr_limit=None,
@@ -739,6 +919,74 @@ def plans_for_world(scenario: ScenarioInput, world: str) -> list[PlanResult]:
                 notes=["Fixed 10-year estimate on the combined balance and the weighted rate."],
             )
         )
+
+    if post:
+        plans.append(_ineligible(PLAN_GRADUATED, "For loans from before July 1, 2026", False))
+        plans.append(_ineligible(PLAN_EXTENDED, "For loans from before July 1, 2026", False))
+    else:
+        if scenario.loans and all(loan.loan_type == "Consolidation" for loan in scenario.loans):
+            grad_term = consolidation_term_months(balance)
+            grad_note = (
+                "Graduated term follows the combined consolidation balance, from 10 years under $7,500 "
+                "to 30 years at $60,000 or more. Those dollar breaks are not reprinted on the StudentAid page used for this update."
+            )
+        else:
+            grad_term = 120
+            grad_note = (
+                "Payments rise every two years. The last step is three times the first, and the first payment covers interest due at the start. "
+                "Modeled as 10 years unless every loan is a consolidation."
+            )
+        grad_schedule = graduated_schedule(balance, monthly_rate, grad_term)
+        plans.append(
+            _run_counted_plan(
+                plan_id=PLAN_GRADUATED,
+                scenario=scenario,
+                balance=balance,
+                monthly_rate=monthly_rate,
+                agi0=agi0,
+                std_cap=std_cap,
+                kind="schedule",
+                fixed_payment=None,
+                term=grad_term,
+                pslf_counts=False,
+                idr_limit=None,
+                chips=["Eligible in this estimate", "Does not count toward PSLF"],
+                notes=[grad_note, "Graduated does not count toward PSLF in this estimate."],
+                schedule=grad_schedule,
+            )
+        )
+        if balance > 30_000:
+            extended_payment = amort_payment(balance, monthly_rate, 300)
+            plans.append(
+                _run_counted_plan(
+                    plan_id=PLAN_EXTENDED,
+                    scenario=scenario,
+                    balance=balance,
+                    monthly_rate=monthly_rate,
+                    agi0=agi0,
+                    std_cap=std_cap,
+                    kind="fixed",
+                    fixed_payment=extended_payment,
+                    term=300,
+                    pslf_counts=False,
+                    idr_limit=None,
+                    chips=["Eligible in this estimate", "Does not count toward PSLF"],
+                    notes=[
+                        "Fixed 25-year payment because the combined balance is more than $30,000.",
+                        "The October 7, 1998 new-borrower test is not asked. The graduated option under Extended is not a separate row.",
+                        "Extended does not count toward PSLF in this estimate.",
+                    ],
+                )
+            )
+        else:
+            plans.append(
+                _ineligible(
+                    PLAN_EXTENDED,
+                    "More than $30,000 is required in this estimate",
+                    False,
+                    ["Extended is described for borrowers who owe more than $30,000."],
+                )
+            )
 
     tier_term = tiered_term_months(balance)
     tier_payment = amort_payment(balance, monthly_rate, tier_term)
@@ -812,6 +1060,19 @@ def plans_for_world(scenario: ScenarioInput, world: str) -> list[PlanResult]:
         if post:
             plans.append(_ineligible(plan_id, "For loans from before July 1, 2026", True, [note]))
             return
+        if _has_parent(scenario.loans):
+            plans.append(_ineligible(plan_id, "Not modeled for Parent PLUS", True, [note]))
+            return
+        if _has_parent_consolidation(scenario.loans):
+            plans.append(
+                _ineligible(
+                    plan_id,
+                    "Not modeled for a consolidation that repaid Parent PLUS",
+                    True,
+                    [note, "Public descriptions require at least one ICR payment before July 1, 2028 before IBR on that consolidation. This estimate does not apply that step."],
+                )
+            )
+            return
         plans.append(
             _run_counted_plan(
                 plan_id=plan_id,
@@ -846,20 +1107,20 @@ def plans_for_world(scenario: ScenarioInput, world: str) -> list[PlanResult]:
         choice in {"yes", "not_sure"},
     )
 
+    paye_block = None
     if post:
-        plans.append(_ineligible(PLAN_PAYE, "For loans from before July 1, 2026", True))
+        paye_block = "For loans from before July 1, 2026"
+    elif _has_parent(scenario.loans) or _has_parent_consolidation(scenario.loans):
+        paye_block = "Not modeled for Parent PLUS"
+    elif _has_ffel(scenario.loans):
+        paye_block = "Not modeled for FFEL"
+    if paye_block:
+        plans.append(_ineligible(PLAN_PAYE, paye_block, True))
     else:
         switch_at = months_until(scenario.start_date, PAYE_SUNSET)
-        if rap_reason:
-            switch_kind = "ibr10" if choice == "yes" else "ibr15"
-            switch_limit = 240 if choice == "yes" else 300
-            successor = "IBR"
-        else:
-            switch_kind = "rap"
-            switch_limit = RAP_PAYMENTS
-            successor = "RAP"
+        switch_kind, switch_limit, successor, _ignored = _sunset_successor(scenario, rap_reason)
         paye_notes = [
-            f"PAYE is modeled through July 1, 2028. After that date this estimate continues under {successor}.",
+            f"PAYE closes by July 1, 2028. After that date this estimate continues under {successor}. The page used for this update does not name the plan that follows.",
             "The partial-financial-hardship test is not applied.",
         ]
         plans.append(
@@ -871,8 +1132,8 @@ def plans_for_world(scenario: ScenarioInput, world: str) -> list[PlanResult]:
                 agi0=agi0,
                 std_cap=std_cap,
                 kind="paye",
-                fixed_payment=None,
-                term=switch_limit,
+                fixed_payment=std_cap if switch_kind == "fixed" else None,
+                term=switch_limit or 120,
                 pslf_counts=pslf,
                 idr_limit=None,
                 chips=["Closing by July 1, 2028", "Eligible in this estimate"],
@@ -883,6 +1144,47 @@ def plans_for_world(scenario: ScenarioInput, world: str) -> list[PlanResult]:
                 paye_idr_limit=240,
             )
         )
+
+    icr_block = None
+    if post:
+        icr_block = "For loans from before July 1, 2026"
+    elif _has_parent(scenario.loans):
+        icr_block = "Not modeled for Parent PLUS"
+    elif _has_ffel(scenario.loans):
+        icr_block = "Not modeled for FFEL"
+    if icr_block:
+        plans.append(_ineligible(PLAN_ICR, icr_block, True))
+    else:
+        switch_at = months_until(scenario.start_date, PAYE_SUNSET)
+        switch_kind, switch_limit, successor, _ignored = _sunset_successor(scenario, rap_reason)
+        twelve_year = amort_payment(balance, monthly_rate, 144)
+        icr_notes = [
+            "The lesser of 20% of discretionary income and a 12-year payment times the 2026–27 income percentage factor. Discretionary income here is AGI minus 100% of the poverty guideline.",
+            f"ICR closes by July 1, 2028. After that date this estimate continues under {successor}. The page used for this update does not name the plan that follows.",
+            "The 12-year amount uses the starting balance. A spouse's loans are not prorated into a joint ICR payment.",
+        ]
+        plans.append(
+            _run_counted_plan(
+                plan_id=PLAN_ICR,
+                scenario=scenario,
+                balance=balance,
+                monthly_rate=monthly_rate,
+                agi0=agi0,
+                std_cap=std_cap,
+                kind="icr",
+                fixed_payment=std_cap if switch_kind == "fixed" else None,
+                term=switch_limit or 120,
+                pslf_counts=pslf,
+                idr_limit=None,
+                chips=["Closing by July 1, 2028", "Eligible in this estimate"],
+                notes=icr_notes,
+                switch_at=switch_at,
+                switch_kind=switch_kind,
+                switch_idr_limit=switch_limit,
+                paye_idr_limit=300,
+                icr_base=twelve_year,
+            )
+        )
     return plans
 
 
@@ -890,14 +1192,14 @@ def _world_notes(scenario: ScenarioInput, world_key: str) -> list[str]:
     notes = [
         "Filing-status income rules are simplified. Treat every figure as an estimate.",
     ]
-    if any(loan.loan_type == "Parent PLUS" or (loan.loan_type == "Consolidation" and loan.repaid_parent_plus) for loan in scenario.loans):
+    if _has_parent(scenario.loans):
+        notes.append("Parent PLUS is not given a RAP, IBR, PAYE, or ICR estimate. Standard, Graduated, and Extended can still appear for loans from before July 1, 2026.")
+    elif _has_parent_consolidation(scenario.loans):
         notes.append(
-            "A Parent PLUS route into IBR described in public materials had a consolidation window through June 30, 2026. This calculator does not estimate that route."
+            "A consolidation that repaid Parent PLUS is not given RAP or PAYE. ICR can appear. IBR is withheld because public descriptions require at least one ICR payment before July 1, 2028, and this estimate does not apply that step."
         )
-    if any(loan.loan_type == "FFEL" for loan in scenario.loans):
-        notes.append("FFEL loans are not modeled as RAP. Confirm the plans your servicer still offers for that loan.")
-    if world_key != "on_or_after_july_2026":
-        notes.append("Graduated and Extended repayment may still be open for loans from before July 1, 2026. This version does not estimate those payments.")
+    if _has_ffel(scenario.loans):
+        notes.append("FFEL is not given a RAP, PAYE, or ICR estimate. RAP can apply after a Direct consolidation of a non-parent FFEL loan, which this estimate does not simulate. Parent FFEL loans are not eligible for IBR.")
     if scenario.autopay:
         notes.append(
             "Auto-pay is on in this estimate, so the rate is 1 percentage point lower. The toggle stays off unless you turn it on. Confirm any reduction with your servicer."
@@ -942,7 +1244,7 @@ def build_audit(scenario: ScenarioInput) -> AuditResult:
         notes = _world_notes(scenario, "on_or_after_july_2026")
         notes.insert(
             0,
-            "A loan marked on or after July 1, 2026 limits this estimate to RAP and Tiered Standard for the combined balance.",
+            "A loan first disbursed on or after July 1, 2026 limits this combined estimate to RAP and Tiered Standard. Split older loans into their own scenario to see Standard, Graduated, Extended, IBR, PAYE, and ICR.",
         )
     else:
         worlds = {"primary": plans_for_world(scenario, "pre")}
